@@ -11,7 +11,12 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Your Name", email = "you@example.com" }]
 keywords = ["risingwave", "postgresql", "cdc", "streaming", "pipeline", "sdk"]
-dependencies = ["typer>=0.12", "psycopg[binary]>=3.1", "pydantic>=2.7"]
+dependencies = [
+    "typer>=0.12",
+    "psycopg[binary]>=3.1",
+    "pydantic>=2.7",
+    "rich>=13.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.5"]

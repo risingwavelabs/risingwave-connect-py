@@ -1,18 +1,47 @@
 """RisingWave Pipeline SDK
 
-A Python SDK for creating and managing RisingWave data pipelines.
+A Python SDK for creating and managing RisingWave data pipelines with table discovery and selection.
 """
 
 from .client import RisingWaveClient
-from .pipelines.postgres_cdc import PostgresCDCPipeline, PostgresCDCConfig
-from .models import Source, Table, MaterializedView
+from .models import Source, Table, Sink, MaterializedView
+from .pipeline_builder import PipelineBuilder, create_postgresql_cdc_pipeline
+from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLPipeline
+from .discovery.base import TableSelector, TableInfo, ColumnInfo
+
+# Sink components
+from .sinks.base import SinkConfig, SinkResult
+from .sinks.s3 import S3Config, S3Sink
+from .sinks.postgresql import PostgreSQLSinkConfig, PostgreSQLSink
 
 __all__ = [
+    # Core components
     "RisingWaveClient",
-    "PostgresCDCPipeline", 
-    "PostgresCDCConfig",
+    "PipelineBuilder",
+
+    # PostgreSQL components
+    "PostgreSQLConfig",
+    "PostgreSQLDiscovery",
+    "PostgreSQLPipeline",
+    "create_postgresql_cdc_pipeline",
+
+    # Discovery and selection
+    "TableSelector",
+    "TableInfo",
+    "ColumnInfo",
+
+    # Sink components
+    "SinkConfig",
+    "SinkResult",
+    "S3Config",
+    "S3Sink",
+    "PostgreSQLSinkConfig",
+    "PostgreSQLSink",
+
+    # Data models
     "Source",
-    "Table", 
+    "Table",
+    "Sink",
     "MaterializedView",
 ]
 

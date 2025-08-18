@@ -1,22 +1,122 @@
-"""PostgreSQL CDC pipeline implementation."""
+"""PostgreSQL CDC pipeline implementation.
+
+⚠️  DEPRECATED: This module provides legacy pipeline functionality.
+    Use the enhanced PostgreSQLConfig and PipelineBuilder API instead.
+"""
 
 from __future__ import annotations
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Iterable
 
 from pydantic import BaseModel
 
 from ..client import RisingWaveClient
 from ..models import Source, Table
-from ..sql_builders import build_create_source_postgres_cdc, build_create_table_from_source
 
 
 logger = logging.getLogger(__name__)
 
 
+def _quote(val: str) -> str:
+    """Quote SQL string values."""
+    return val.replace("'", "''")
+
+
+def build_create_source_postgres_cdc(
+    source_name: str,
+    *,
+    hostname: str,
+    port: int = 5432,
+    username: str,
+    password: str,
+    database: str,
+    schema: Optional[str] = None,
+    slot_name: Optional[str] = None,
+    publication_name: Optional[str] = None,
+    publication_create_enable: Optional[bool] = None,
+    auto_schema_change: Optional[bool] = None,
+    ssl_mode: Optional[str] = None,
+    ssl_root_cert: Optional[str] = None,
+    extra_with: Optional[Dict[str, str]] = None,
+    debezium_overrides: Optional[Dict[str, str]] = None,
+) -> str:
+    """Builds a CREATE SOURCE statement for postgres-cdc in RisingWave."""
+    with_items: list[str] = [
+        "connector='postgres-cdc'",
+        f"hostname='{_quote(hostname)}'",
+        f"port='{int(port)}'",
+        f"username='{_quote(username)}'",
+        f"password='{_quote(password)}'",
+        f"database.name='{_quote(database)}'",
+    ]
+    if schema:
+        with_items.append(f"schema.name='{_quote(schema)}'")
+    if slot_name:
+        with_items.append(f"slot.name='{_quote(slot_name)}'")
+    if publication_name:
+        with_items.append(f"publication.name='{_quote(publication_name)}'")
+    if publication_create_enable is not None:
+        with_items.append(
+            f"publication.create.enable='{'true' if publication_create_enable else 'false'}'"
+        )
+    if auto_schema_change is not None:
+        with_items.append(
+            f"auto.schema.change='{'true' if auto_schema_change else 'false'}'")
+    if ssl_mode:
+        with_items.append(f"ssl.mode='{_quote(ssl_mode)}'")
+    if ssl_root_cert:
+        with_items.append(f"ssl.root.cert='{_quote(ssl_root_cert)}'")
+
+    if extra_with:
+        for k, v in extra_with.items():
+            with_items.append(f"{k}='{_quote(str(v))}'")
+
+    if debezium_overrides:
+        for k, v in debezium_overrides.items():
+            with_items.append(f"debezium.{k}='{_quote(str(v))}'")
+
+    with_clause = ",\n    ".join(with_items)
+    return f"""CREATE SOURCE {source_name} WITH (
+    {with_clause}
+);""".strip()
+
+
+def build_create_table_from_source(
+    table_name: str,
+    source_name: str,
+    *,
+    pg_table: str,
+    schema: Optional[str] = None,
+    columns_ddl: Optional[Iterable[str]] = None,
+    snapshot: Optional[bool] = None,
+    include_timestamp_as: Optional[str] = None,
+) -> str:
+    """Builds a CREATE TABLE ... FROM source ... statement."""
+    include_clause = ""
+    if include_timestamp_as:
+        include_clause = f"\nINCLUDE timestamp AS {include_timestamp_as}"
+
+    with_items: list[str] = []
+    if snapshot is not None:
+        with_items.append(f"snapshot='{'true' if snapshot else 'false'}'")
+    with_clause = f"\nWITH ( {', '.join(with_items)} )" if with_items else ""
+
+    cols = "*" if columns_ddl is None else ",\n    ".join(columns_ddl)
+
+    schema_prefix = f"{schema}." if schema else ""
+
+    return f"""CREATE TABLE {schema_prefix}{table_name} (
+    {cols}
+){include_clause}{with_clause}
+FROM {source_name} TABLE '{_quote(pg_table)}';""".strip()
+
+
 class PostgresCDCConfig(BaseModel):
-    """Configuration for PostgreSQL CDC pipeline."""
-    
+    """Configuration for PostgreSQL CDC pipeline.
+
+    ⚠️  DEPRECATED: Use PostgreSQLConfig from sources.postgresql instead.
+    """
+
     # PostgreSQL connection
     postgres_host: str
     postgres_port: int = 5432
@@ -24,27 +124,38 @@ class PostgresCDCConfig(BaseModel):
     postgres_password: str = ""
     postgres_database: str
     postgres_schema: str = "public"
-    
+
     # CDC configuration
     slot_name: Optional[str] = None
     publication_name: str = "rw_publication"
     publication_create_enable: bool = True
     auto_schema_change: bool = False
-    
+
     # SSL configuration
     ssl_mode: Optional[str] = None
     ssl_root_cert: Optional[str] = None
-    
+
     # Advanced Debezium properties
     debezium_properties: Dict[str, str] = {}
-    
+
     # Extra WITH clause properties
     extra_properties: Dict[str, str] = {}
 
 
 class PostgresCDCPipeline:
-    """Pipeline for creating PostgreSQL CDC sources and tables in RisingWave."""
-    
+    """Pipeline for creating PostgreSQL CDC sources and tables in RisingWave.
+
+    ⚠️  DEPRECATED: Use PipelineBuilder with PostgreSQLConfig instead.
+
+        # Old way (deprecated):
+        pipeline = PostgresCDCPipeline(client, postgres_host="...", ...)
+
+        # New way (recommended):
+        config = PostgreSQLConfig(source_name="...", hostname="...", ...)
+        builder = PipelineBuilder(client)
+        result = builder.create_postgresql_pipeline(config, table_selector)
+    """
+
     def __init__(
         self,
         client: RisingWaveClient,
@@ -53,14 +164,14 @@ class PostgresCDCPipeline:
         # Direct config parameters (alternative to config object)
         postgres_host: Optional[str] = None,
         postgres_port: int = 5432,
-        postgres_user: str = "postgres", 
+        postgres_user: str = "postgres",
         postgres_password: str = "",
         postgres_database: Optional[str] = None,
         postgres_schema: str = "public",
         **kwargs
     ):
         """Initialize PostgreSQL CDC pipeline.
-        
+
         Args:
             client: RisingWave client instance
             config: Optional PostgresCDCConfig object
@@ -73,13 +184,14 @@ class PostgresCDCPipeline:
             **kwargs: Additional config parameters
         """
         self.client = client
-        
+
         if config:
             self.config = config
         else:
             if not postgres_host or not postgres_database:
-                raise ValueError("postgres_host and postgres_database are required")
-            
+                raise ValueError(
+                    "postgres_host and postgres_database are required")
+
             self.config = PostgresCDCConfig(
                 postgres_host=postgres_host,
                 postgres_port=postgres_port,
@@ -89,7 +201,7 @@ class PostgresCDCPipeline:
                 postgres_schema=postgres_schema,
                 **kwargs
             )
-    
+
     def create_source(
         self,
         name: str,
@@ -106,7 +218,7 @@ class PostgresCDCPipeline:
         if_not_exists: bool = True,
     ) -> Source:
         """Create a PostgreSQL CDC source.
-        
+
         Args:
             name: Source name
             schema: RisingWave schema to create source in
@@ -119,7 +231,7 @@ class PostgresCDCPipeline:
             debezium_properties: Additional Debezium properties
             extra_properties: Additional WITH clause properties
             if_not_exists: Whether to use IF NOT EXISTS
-            
+
         Returns:
             Source object representing the created source
         """
@@ -127,8 +239,8 @@ class PostgresCDCPipeline:
         slot_name = slot_name or self.config.slot_name
         publication_name = publication_name or self.config.publication_name
         publication_create_enable = (
-            publication_create_enable 
-            if publication_create_enable is not None 
+            publication_create_enable
+            if publication_create_enable is not None
             else self.config.publication_create_enable
         )
         auto_schema_change = (
@@ -138,21 +250,22 @@ class PostgresCDCPipeline:
         )
         ssl_mode = ssl_mode or self.config.ssl_mode
         ssl_root_cert = ssl_root_cert or self.config.ssl_root_cert
-        
+
         # Merge properties
         merged_debezium = {**self.config.debezium_properties}
         if debezium_properties:
             merged_debezium.update(debezium_properties)
-            
+
         merged_extra = {**self.config.extra_properties}
         if extra_properties:
             merged_extra.update(extra_properties)
-        
+
         # Check if source already exists
         if if_not_exists and self.client.source_exists(name, schema):
-            logger.info(f"Source {schema}.{name} already exists, skipping creation")
+            logger.info(
+                f"Source {schema}.{name} already exists, skipping creation")
             return Source(name=name, schema=schema, source_type="postgres-cdc")
-        
+
         # Build and execute CREATE SOURCE SQL
         sql = build_create_source_postgres_cdc(
             f"{schema}.{name}" if schema != "public" else name,
@@ -171,16 +284,16 @@ class PostgresCDCPipeline:
             extra_with=merged_extra if merged_extra else None,
             debezium_overrides=merged_debezium if merged_debezium else None,
         )
-        
+
         # Add IF NOT EXISTS if requested
         if if_not_exists:
             sql = sql.replace("CREATE SOURCE", "CREATE SOURCE IF NOT EXISTS")
-        
+
         self.client.execute(sql)
         logger.info(f"Created PostgreSQL CDC source: {schema}.{name}")
-        
+
         return Source(name=name, schema=schema, source_type="postgres-cdc")
-    
+
     def create_table(
         self,
         name: str,
@@ -194,7 +307,7 @@ class PostgresCDCPipeline:
         if_not_exists: bool = True,
     ) -> Table:
         """Create a table from a PostgreSQL CDC source.
-        
+
         Args:
             name: Table name in RisingWave
             source: Source object to create table from
@@ -204,15 +317,16 @@ class PostgresCDCPipeline:
             snapshot: Whether to enable initial snapshot
             include_timestamp_as: Include timestamp metadata as this column name
             if_not_exists: Whether to use IF NOT EXISTS
-            
+
         Returns:
             Table object representing the created table
         """
         # Check if table already exists
         if if_not_exists and self.client.table_exists(name, schema):
-            logger.info(f"Table {schema}.{name} already exists, skipping creation")
+            logger.info(
+                f"Table {schema}.{name} already exists, skipping creation")
             return Table(name=name, schema=schema, source=source)
-        
+
         # Build and execute CREATE TABLE SQL
         sql = build_create_table_from_source(
             name,
@@ -223,16 +337,16 @@ class PostgresCDCPipeline:
             snapshot=snapshot,
             include_timestamp_as=include_timestamp_as,
         )
-        
+
         # Add IF NOT EXISTS if requested
         if if_not_exists:
             sql = sql.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
-        
+
         self.client.execute(sql)
         logger.info(f"Created table: {schema}.{name} from {postgres_table}")
-        
+
         return Table(name=name, schema=schema, source=source)
-    
+
     def create_pipeline(
         self,
         source_name: str,
@@ -243,20 +357,21 @@ class PostgresCDCPipeline:
         **source_kwargs
     ) -> tuple[Source, list[Table]]:
         """Create a complete pipeline with one source and multiple tables.
-        
+
         Args:
             source_name: Name for the CDC source
             tables: Dict mapping RisingWave table names to PostgreSQL table names
             source_schema: Schema for the source
             table_schema: Schema for the tables  
             **source_kwargs: Additional arguments for create_source
-            
+
         Returns:
             Tuple of (created_source, list_of_created_tables)
         """
         # Create the source
-        source = self.create_source(source_name, schema=source_schema, **source_kwargs)
-        
+        source = self.create_source(
+            source_name, schema=source_schema, **source_kwargs)
+
         # Create all tables
         created_tables = []
         for rw_table_name, pg_table_name in tables.items():
@@ -267,6 +382,7 @@ class PostgresCDCPipeline:
                 schema=table_schema
             )
             created_tables.append(table)
-        
-        logger.info(f"Created pipeline with source {source.qualified_name} and {len(created_tables)} tables")
+
+        logger.info(
+            f"Created pipeline with source {source.qualified_name} and {len(created_tables)} tables")
         return source, created_tables

@@ -2,23 +2,34 @@
 Example: Advanced PostgreSQL CDC Configuration
 
 This example demonstrates advanced configuration options including
-SSL, Debezium properties, and multiple table creation.
+SSL, custom properties, and pattern-based table selection.
 """
 
-from risingwave_pipeline_sdk import RisingWaveClient, PostgresCDCPipeline, PostgresCDCConfig
+from risingwave_pipeline_sdk import (
+    RisingWaveClient,
+    PipelineBuilder,
+    PostgreSQLConfig,
+    TableSelector
+)
 
 
 def main():
     client = RisingWaveClient(
-        "postgresql://oauth_default:@rwc-g1j2i9rs24f0aort385vpie7b0-my-project-0813.test-useast1-eks-a.risingwave-cloud.xyz: 4566/dev?sslmode=require")
+        host="localhost",
+        port=4566,
+        user="root",
+        database="dev"
+    )
 
-    config = PostgresCDCConfig(
-        postgres_host="postgres.example.com",
-        postgres_port=5432,
-        postgres_user="replication_user",
-        postgres_password="secure_password",
-        postgres_database="production_db",
-        postgres_schema="public",
+    # Advanced PostgreSQL configuration
+    pg_config = PostgreSQLConfig(
+        source_name="production_cdc",
+        hostname="localhost",
+        port=5432,
+        username="postgres",
+        password="secret",
+        database="mydb",
+        schema_name="public",
 
         # CDC settings
         slot_name="production_slot",
@@ -27,8 +38,12 @@ def main():
         auto_schema_change=True,
 
         # SSL configuration
-        ssl_mode="require",
-        ssl_root_cert="/path/to/ca.pem",
+        ssl_mode="prefer",
+
+        # Advanced backfill configuration
+        backfill_num_rows_per_split="100000",
+        backfill_parallelism="8",
+        backfill_as_even_splits=True,
 
         # Advanced Debezium properties
         debezium_properties={
@@ -39,28 +54,25 @@ def main():
         },
     )
 
-    # Create pipeline with advanced config
-    pipeline = PostgresCDCPipeline(client=client, config=config)
+    # Create pipeline builder
+    builder = PipelineBuilder(client)
 
-    # Create complete pipeline with multiple tables
-    table_mappings = {
-        "customers": "public.customers",
-        "orders": "public.orders",
-        "order_items": "public.order_items",
-        "products": "public.products",
-        "inventory": "warehouse.inventory"
-    }
-
-    source, tables = pipeline.create_pipeline(
-        source_name="production_cdc",
-        tables=table_mappings,
-        source_schema="public",
-        table_schema="staging"
+    # Pattern-based table selection
+    table_selector = TableSelector(
+        include_patterns=["customer*", "order*", "product*", "inventory"],
+        exclude_patterns=["*_temp", "*_backup"]
     )
 
-    print(f"Created source: {source.qualified_name}")
-    print("Created tables:")
-    for table in tables:
+    # Create complete pipeline with advanced configuration
+    result = builder.create_postgresql_pipeline(
+        config=pg_config,
+        table_selector=table_selector,
+        dry_run=False
+    )
+
+    print(f"Created source: {pg_config.source_name}")
+    print(f"Selected tables: {len(result['selected_tables'])}")
+    for table in result['selected_tables']:
         print(f"  - {table.qualified_name}")
 
     print("Advanced pipeline setup complete!")
