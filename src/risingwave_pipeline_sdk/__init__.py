@@ -13,6 +13,7 @@ from .discovery.base import TableSelector, TableInfo, ColumnInfo
 from .sinks.base import SinkConfig, SinkResult
 from .sinks.s3 import S3Config, S3Sink
 from .sinks.postgresql import PostgreSQLSinkConfig, PostgreSQLSink
+from .sinks.iceberg import IcebergConfig, IcebergSink
 
 __all__ = [
     # Core components
@@ -37,6 +38,8 @@ __all__ = [
     "S3Sink",
     "PostgreSQLSinkConfig",
     "PostgreSQLSink",
+    "IcebergConfig",
+    "IcebergSink",
 
     # Data models
     "Source",

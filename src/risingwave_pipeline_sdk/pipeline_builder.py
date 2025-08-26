@@ -10,6 +10,7 @@ from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQ
 from .sinks.base import SinkConfig, SinkResult
 from .sinks.s3 import S3Config, S3Sink
 from .sinks.postgresql import PostgreSQLSinkConfig, PostgreSQLSink
+from .sinks.iceberg import IcebergConfig, IcebergSink
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ class PipelineBuilder:
 
     def create_sink(
         self,
-        sink_config: Union[S3Config, PostgreSQLSinkConfig],
+        sink_config: Union[S3Config, PostgreSQLSinkConfig, IcebergConfig],
         source_tables: List[str],
         select_queries: Optional[Dict[str, str]] = None,
         dry_run: bool = False
@@ -138,7 +139,7 @@ class PipelineBuilder:
         """Create sinks for the specified source tables.
 
         Args:
-            sink_config: Sink configuration (S3 or PostgreSQL)
+            sink_config: Sink configuration (S3, PostgreSQL, or Iceberg)
             source_tables: List of source table names to create sinks for
             select_queries: Optional custom SELECT queries per table
             dry_run: If True, return SQL without executing
@@ -151,6 +152,8 @@ class PipelineBuilder:
             sink = S3Sink(sink_config)
         elif isinstance(sink_config, PostgreSQLSinkConfig):
             sink = PostgreSQLSink(sink_config)
+        elif isinstance(sink_config, IcebergConfig):
+            sink = IcebergSink(sink_config)
         else:
             raise ValueError(
                 f"Unsupported sink config type: {type(sink_config)}")
@@ -166,15 +169,19 @@ class PipelineBuilder:
                 # Update config with unique name
                 if isinstance(sink_config, S3Config):
                     table_config = S3Config(**sink_config.dict())
-                else:
+                elif isinstance(sink_config, PostgreSQLSinkConfig):
                     table_config = PostgreSQLSinkConfig(**sink_config.dict())
+                else:  # IcebergConfig
+                    table_config = IcebergConfig(**sink_config.dict())
                 table_config.sink_name = sink_name
 
                 # Create new sink instance with updated config
                 if isinstance(table_config, S3Config):
                     table_sink = S3Sink(table_config)
-                else:
+                elif isinstance(table_config, PostgreSQLSinkConfig):
                     table_sink = PostgreSQLSink(table_config)
+                else:  # IcebergConfig
+                    table_sink = IcebergSink(table_config)
             else:
                 table_sink = sink
                 table_config = sink_config
