@@ -48,11 +48,41 @@ class TableSelector:
     def select_tables(self, available_tables: List[TableInfo]) -> List[TableInfo]:
         """Select tables based on configured patterns."""
         if self.specific_tables:
-            # Use specific table list
+            # Use specific table list - include even tables that don't exist yet
             selected = []
-            for table in available_tables:
-                if table.qualified_name in self.specific_tables or table.table_name in self.specific_tables:
-                    selected.append(table)
+            available_table_names = {
+                table.table_name for table in available_tables}
+            available_qualified_names = {
+                table.qualified_name for table in available_tables}
+
+            for table_name in self.specific_tables:
+                # First try to find the table in available tables
+                found = False
+                for table in available_tables:
+                    if table.qualified_name == table_name or table.table_name == table_name:
+                        selected.append(table)
+                        found = True
+                        break
+
+                # If not found, create a placeholder TableInfo for tables that might not exist yet
+                if not found:
+                    # Assume it's in the 'public' schema if no schema specified
+                    if '.' in table_name:
+                        schema_name, table_name_only = table_name.split('.', 1)
+                    else:
+                        schema_name = 'public'
+                        table_name_only = table_name
+
+                    placeholder_table = TableInfo(
+                        schema_name=schema_name,
+                        table_name=table_name_only,
+                        table_type='BASE TABLE',  # Assume base table
+                        row_count=None,
+                        size_bytes=None,
+                        comment=f"Table not found in discovery - will attempt to create CDC"
+                    )
+                    selected.append(placeholder_table)
+
             return selected
 
         if self.include_all:
@@ -114,7 +144,7 @@ class DatabaseDiscovery(ABC):
 class SourceConfig(BaseModel):
     """Base configuration for all source types."""
 
-    source_name: str
+    source_name: Optional[str] = None  # Will be auto-generated if not provided
     hostname: str
     port: int
     username: str
@@ -136,6 +166,28 @@ class SourcePipeline(ABC):
     def __init__(self, rw_client, config: SourceConfig):
         self.rw_client = rw_client
         self.config = config
+
+        # Auto-generate source_name if not provided
+        if not self.config.source_name:
+            self.config.source_name = self._generate_source_name()
+
+    def _generate_source_name(self) -> str:
+        """Generate a default source name based on the source type and database."""
+        # Use database name and schema to create a practical source name
+        # Avoid including hostname to prevent exposure of private information
+
+        # Sanitize database name (replace special chars with underscores)
+        clean_db = self.config.database.replace(
+            '-', '_').replace('.', '_').replace(' ', '_')
+        base_name = f"postgres_cdc_{clean_db}"
+
+        # Add schema if it's not the default 'public'
+        if hasattr(self.config, 'schema_name') and self.config.schema_name != 'public':
+            clean_schema = self.config.schema_name.replace(
+                '-', '_').replace('.', '_').replace(' ', '_')
+            base_name += f"_{clean_schema}"
+
+        return base_name
 
     @abstractmethod
     def create_source_sql(self) -> str:

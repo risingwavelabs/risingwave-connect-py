@@ -40,6 +40,7 @@ class RisingWaveClient:
         host: str = "localhost",
         port: int = 4566,
         user: str = "root",
+        username: Optional[str] = None,  # Alias for user
         password: Optional[str] = None,
         database: str = "dev",
         schema: str = "public",
@@ -50,11 +51,16 @@ class RisingWaveClient:
             dsn: PostgreSQL connection string, if provided overrides other params
             host: RisingWave host
             port: RisingWave port  
-            user: Username
+            user: Username (legacy parameter)
+            username: Username (preferred parameter, alias for user)
             password: Password
             database: Database name
             schema: Default schema
         """
+        # Handle username alias
+        if username is not None:
+            user = username
+
         if dsn:
             self.config = RisingWaveConfig()  # Will parse from DSN if needed
             self._dsn = dsn

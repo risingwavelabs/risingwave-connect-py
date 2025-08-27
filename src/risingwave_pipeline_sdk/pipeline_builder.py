@@ -24,14 +24,14 @@ class PipelineBuilder:
     def create_postgresql_pipeline(
         self,
         config: PostgreSQLConfig,
-        table_selector: Optional[TableSelector] = None,
+        table_selector: Optional[Union[TableSelector, List[str]]] = None,
         dry_run: bool = False
     ) -> Dict[str, Any]:
         """Create a complete PostgreSQL CDC pipeline with table discovery.
 
         Args:
             config: PostgreSQL configuration
-            table_selector: Table selection criteria
+            table_selector: Table selection criteria. Can be a TableSelector object or a list of table names.
             dry_run: If True, return SQL without executing
 
         Returns:
@@ -41,19 +41,41 @@ class PipelineBuilder:
         discovery = PostgreSQLDiscovery(config)
         pipeline = PostgreSQLPipeline(self.rw_client, config)
 
-        # Test connection
-        if not discovery.test_connection():
+        # Test connection (skip in dry run mode)
+        if not dry_run and not discovery.test_connection():
             raise ConnectionError(
                 f"Cannot connect to PostgreSQL at {config.hostname}:{config.port}")
 
-        # Discover tables
-        logger.info(f"Discovering tables in schema '{config.schema_name}'...")
-        available_tables = discovery.list_tables(config.schema_name)
+        # Discover tables (mock in dry run mode)
+        if dry_run:
+            logger.info("Dry run mode: skipping actual table discovery")
+            # Provide mock tables for demonstration
+            from risingwave_pipeline_sdk.discovery.base import TableInfo
+            available_tables = [
+                TableInfo(
+                    schema_name=config.schema_name,
+                    table_name="user_events",
+                    table_type="BASE TABLE"
+                ),
+                TableInfo(
+                    schema_name=config.schema_name,
+                    table_name="users",
+                    table_type="BASE TABLE"
+                )
+            ]
+        else:
+            logger.info(
+                f"Discovering tables in schema '{config.schema_name}'...")
+            available_tables = discovery.list_tables(config.schema_name)
+
         logger.info(f"Found {len(available_tables)} tables")
 
         # Select tables
         if table_selector is None:
             table_selector = TableSelector(include_all=True)
+        elif isinstance(table_selector, list):
+            # Convert list of table names to TableSelector
+            table_selector = TableSelector(specific_tables=table_selector)
 
         selected_tables = table_selector.select_tables(available_tables)
         logger.info(f"Selected {len(selected_tables)} tables for CDC")
@@ -71,23 +93,58 @@ class PipelineBuilder:
 
         # Execute SQL statements
         executed_statements = []
-        try:
-            for sql in sql_statements:
+        failed_statements = []
+        success_messages = []
+
+        for sql in sql_statements:
+            try:
                 logger.info(f"Executing SQL: {sql[:100]}...")
                 self.rw_client.execute(sql)
                 executed_statements.append(sql)
 
-            return {
-                "available_tables": available_tables,
-                "selected_tables": selected_tables,
-                "sql_statements": sql_statements,
-                "executed_statements": executed_statements,
-                "executed": True
-            }
+                # Generate success message based on SQL type
+                if "CREATE SOURCE" in sql.upper():
+                    success_messages.append(
+                        "✅ CDC source created successfully")
+                elif "CREATE TABLE" in sql.upper():
+                    # Extract table name from SQL
+                    table_name = sql.split("CREATE TABLE IF NOT EXISTS ")[
+                        1].split(" ")[0]
+                    success_messages.append(
+                        f"✅ CDC table '{table_name}' created successfully")
+                else:
+                    success_messages.append(
+                        "✅ SQL statement executed successfully")
 
-        except Exception as e:
-            logger.error(f"Failed to execute SQL: {e}")
-            raise
+            except Exception as e:
+                logger.warning(f"Failed to execute SQL statement: {e}")
+                failed_statements.append({"sql": sql, "error": str(e)})
+                # Continue with next statement instead of stopping
+
+        # Calculate success summary
+        total_statements = len(sql_statements)
+        successful_statements = len(executed_statements)
+        failed_count = len(failed_statements)
+
+        success_summary = {
+            "total_statements": total_statements,
+            "successful_statements": successful_statements,
+            "failed_statements": failed_count,
+            "success_rate": f"{successful_statements}/{total_statements}",
+            "overall_success": failed_count == 0
+        }
+
+        return {
+            "available_tables": available_tables,
+            "selected_tables": selected_tables,
+            "sql_statements": sql_statements,
+            "executed_statements": executed_statements,
+            "failed_statements": failed_statements,
+            "success_messages": success_messages,
+            "success_summary": success_summary,
+            "executed": True,
+            "partial_success": len(failed_statements) > 0
+        }
 
     def discover_postgresql_tables(
         self,
@@ -173,6 +230,9 @@ class PipelineBuilder:
                     table_config = PostgreSQLSinkConfig(**sink_config.dict())
                 else:  # IcebergConfig
                     table_config = IcebergConfig(**sink_config.dict())
+                    # For Iceberg, also update the table name to be unique
+                    table_config.table_name = f"{sink_config.table_name}_{source_table.replace('.', '_')}"
+
                 table_config.sink_name = sink_name
 
                 # Create new sink instance with updated config
@@ -227,25 +287,55 @@ class PipelineBuilder:
         # Execute SQL statements
         executed_statements = []
         executed_results = []
+        success_messages = []
+        failed_results = []
 
-        try:
-            for result, sql in zip(results, sql_statements):
-                if result.success:
+        for result, sql in zip(results, sql_statements):
+            if result.success:
+                try:
                     logger.info(f"Creating sink {result.sink_name}...")
                     self.rw_client.execute(sql)
                     executed_statements.append(sql)
                     executed_results.append(result)
+                    success_messages.append(
+                        f"✅ Sink '{result.sink_name}' created successfully for table '{result.source_table}'")
+                except Exception as e:
+                    logger.error(
+                        f"Failed to execute sink SQL for {result.sink_name}: {e}")
+                    failed_result = SinkResult(
+                        sink_name=result.sink_name,
+                        sink_type=result.sink_type,
+                        sql_statement=result.sql_statement,
+                        source_table=result.source_table,
+                        success=False,
+                        error_message=str(e)
+                    )
+                    failed_results.append(failed_result)
+            else:
+                failed_results.append(result)
 
-            return {
-                "sink_results": executed_results,
-                "sql_statements": sql_statements,
-                "executed_statements": executed_statements,
-                "executed": True
-            }
+        # Calculate success summary
+        total_sinks = len(results)
+        successful_sinks = len(executed_results)
+        failed_sinks = len(failed_results)
 
-        except Exception as e:
-            logger.error(f"Failed to execute sink SQL: {e}")
-            raise
+        success_summary = {
+            "total_sinks": total_sinks,
+            "successful_sinks": successful_sinks,
+            "failed_sinks": failed_sinks,
+            "success_rate": f"{successful_sinks}/{total_sinks}",
+            "overall_success": failed_sinks == 0
+        }
+
+        return {
+            "sink_results": executed_results,
+            "failed_results": failed_results,
+            "sql_statements": sql_statements,
+            "executed_statements": executed_statements,
+            "success_messages": success_messages,
+            "success_summary": success_summary,
+            "executed": True
+        }
 
     def create_s3_sink(
         self,

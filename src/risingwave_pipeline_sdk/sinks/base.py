@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 class SinkConfig(BaseModel):
     """Base configuration for sinks."""
 
-    sink_name: str = Field(..., min_length=1, description="Name of the sink")
+    sink_name: Optional[str] = Field(
+        None, description="Name of the sink (auto-generated if not provided)")
     sink_type: str = Field(...,
                            description="Type of sink (s3, postgres, etc.)")
     schema_name: str = Field(
@@ -24,6 +25,34 @@ class SinkPipeline(ABC):
 
     def __init__(self, config: SinkConfig):
         self.config = config
+
+        # Auto-generate sink_name if not provided
+        if not self.config.sink_name:
+            self.config.sink_name = self._generate_sink_name()
+
+    def _generate_sink_name(self) -> str:
+        """Generate a default sink name based on sink type and configuration."""
+        # Use sink type and target info to create a practical sink name
+        base_name = f"{self.config.sink_type}_sink"
+
+        # Add additional context based on sink type if available
+        if hasattr(self.config, 'database_name') and self.config.database_name:
+            # For Iceberg and similar sinks with database_name
+            db_clean = self.config.database_name.replace(
+                '-', '_').replace('.', '_').replace(' ', '_')
+            base_name = f"{self.config.sink_type}_{db_clean}_sink"
+        elif hasattr(self.config, 'database') and self.config.database:
+            # For PostgreSQL sinks with database field
+            db_clean = self.config.database.replace(
+                '-', '_').replace('.', '_').replace(' ', '_')
+            base_name = f"{self.config.sink_type}_{db_clean}_sink"
+        elif hasattr(self.config, 'bucket_name') and self.config.bucket_name:
+            # For S3 sinks with bucket name
+            bucket_clean = self.config.bucket_name.replace(
+                '-', '_').replace('.', '_')
+            base_name = f"{self.config.sink_type}_{bucket_clean}_sink"
+
+        return base_name
 
     @abstractmethod
     def create_sink_sql(self, source_table: str, select_query: Optional[str] = None) -> str:

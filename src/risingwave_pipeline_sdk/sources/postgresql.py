@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 from contextlib import contextmanager
 
 import psycopg
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from ..discovery.base import (
     DatabaseDiscovery,
@@ -20,17 +20,44 @@ logger = logging.getLogger(__name__)
 
 
 class PostgreSQLConfig(SourceConfig):
-    """PostgreSQL-specific configuration."""
+    """PostgreSQL-specific configuration.
+
+    Args:
+        ssl_mode: Required SSL/TLS encryption mode. 
+                 Accepted values: disabled, preferred, required, verify-ca, verify-full
+        ssl_root_cert: Optional path to CA certificate for SSL verification
+        schema_name: PostgreSQL schema name (default: public)
+        slot_name: Optional replication slot name
+        publication_name: PostgreSQL publication name (default: rw_publication) 
+        publication_create_enable: Auto-create publication if missing (default: True)
+    """
 
     # PostgreSQL specific
     schema_name: str = "public"
-    ssl_mode: Optional[str] = None
+    ssl_mode: str  # Required: SSL/TLS encryption mode
     ssl_root_cert: Optional[str] = None
+
+    @validator('ssl_mode')
+    def validate_ssl_mode(cls, v):
+        """Validate SSL mode values."""
+        valid_modes = ['disabled', 'preferred',
+                       'required', 'verify-ca', 'verify-full']
+        if v not in valid_modes:
+            raise ValueError(
+                f"ssl_mode must be one of: {', '.join(valid_modes)}")
+        return v
 
     # CDC Configuration
     slot_name: Optional[str] = None
-    publication_name: str = "rw_publication"
-    publication_create_enable: bool = True
+    # Optional: defaults to 'rw_publication' if not specified
+    publication_name: Optional[str] = None
+    # Optional: defaults to True if not specified
+    publication_create_enable: Optional[bool] = None
+
+    # Parallel backfill configuration (optional)
+    backfill_num_rows_per_split: Optional[str] = None  # e.g., '100000'
+    backfill_parallelism: Optional[str] = None         # e.g., '8'
+    backfill_as_even_splits: Optional[bool] = None     # e.g., True
 
     # Advanced Debezium properties
     debezium_properties: Dict[str, str] = Field(default_factory=dict)
@@ -182,11 +209,11 @@ class PostgreSQLPipeline(SourcePipeline):
             f"password='{self._escape_sql_string(self.config.password)}'",
             f"database.name='{self._escape_sql_string(self.config.database)}'",
             f"schema.name='{self._escape_sql_string(self.config.schema_name)}'",
+            # Always include ssl_mode since it's required
+            f"ssl.mode='{self.config.ssl_mode}'",
         ]
 
         # Add optional configurations
-        if self.config.ssl_mode:
-            with_items.append(f"ssl.mode='{self.config.ssl_mode}'")
         if self.config.ssl_root_cert:
             with_items.append(
                 f"ssl.root.cert='{self._escape_sql_string(self.config.ssl_root_cert)}'")
@@ -194,10 +221,14 @@ class PostgreSQLPipeline(SourcePipeline):
             with_items.append(
                 f"slot.name='{self._escape_sql_string(self.config.slot_name)}'")
 
-        with_items.append(
-            f"publication.name='{self._escape_sql_string(self.config.publication_name)}'")
-        with_items.append(
-            f"publication.create.enable='{str(self.config.publication_create_enable).lower()}'")
+        # Add publication settings only if explicitly provided by user
+        if self.config.publication_name is not None:
+            with_items.append(
+                f"publication.name='{self._escape_sql_string(self.config.publication_name)}'")
+        if self.config.publication_create_enable is not None:
+            with_items.append(
+                f"publication.create.enable='{str(self.config.publication_create_enable).lower()}'")
+
         with_items.append(
             f"auto.schema.change='{str(self.config.auto_schema_change).lower()}'")
 
@@ -236,7 +267,7 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
         with_clause = ""
         if with_items:
-            with_clause = f"\nWITH (\n    {',\\n    '.join(with_items)}\n)"
+            with_clause = f"\nWITH (\n    {',\n    '.join(with_items)}\n)"
 
         qualified_table_name = f"{rw_schema}.{table_name}" if rw_schema != "public" else table_name
 
