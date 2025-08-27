@@ -1,7 +1,7 @@
 """Tests for Iceberg sink implementation."""
 
 import pytest
-from risingwave_pipeline_sdk.sinks.iceberg import IcebergConfig, IcebergSink
+from risingwave_connect.sinks.iceberg import IcebergConfig, IcebergSink
 
 
 class TestIcebergConfig:

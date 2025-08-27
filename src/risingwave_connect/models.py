@@ -1,4 +1,4 @@
-"""Data models for RisingWave pipeline components."""
+"""Data models for RisingWave connection components."""
 
 from __future__ import annotations
 from typing import Optional

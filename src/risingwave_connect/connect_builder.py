@@ -1,4 +1,4 @@
-"""Pipeline builder with table discovery and selection."""
+"""Connection builder with table discovery and selection."""
 
 from __future__ import annotations
 import logging
@@ -15,8 +15,8 @@ from .sinks.iceberg import IcebergConfig, IcebergSink
 logger = logging.getLogger(__name__)
 
 
-class PipelineBuilder:
-    """High-level pipeline builder with table discovery and selection."""
+class ConnectBuilder:
+    """High-level connection builder with table discovery and selection."""
 
     def __init__(self, rw_client: RisingWaveClient):
         self.rw_client = rw_client
@@ -35,9 +35,9 @@ class PipelineBuilder:
             dry_run: If True, return SQL without executing
 
         Returns:
-            Dictionary with pipeline creation results
+            Dictionary with connection creation results
         """
-        # Initialize discovery and pipeline
+        # Initialize discovery and connection
         discovery = PostgreSQLDiscovery(config)
         pipeline = PostgreSQLPipeline(self.rw_client, config)
 
@@ -50,7 +50,7 @@ class PipelineBuilder:
         if dry_run:
             logger.info("Dry run mode: skipping actual table discovery")
             # Provide mock tables for demonstration
-            from risingwave_pipeline_sdk.discovery.base import TableInfo
+            from risingwave_connect.discovery.base import TableInfo
             available_tables = [
                 TableInfo(
                     schema_name=config.schema_name,
@@ -400,7 +400,7 @@ def create_postgresql_cdc_pipeline(
     Returns:
         Pipeline creation results
     """
-    builder = PipelineBuilder(rw_client)
+    builder = ConnectBuilder(rw_client)
 
     # Create table selector
     if include_tables:

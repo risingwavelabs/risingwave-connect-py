@@ -2,11 +2,11 @@
 mode: agent
 ---
 
-# RisingWave Pipeline SDK Copilot Prompt
+# RisingWave Connect Copilot Prompt
 
 ## Overview
 
-The RisingWave Pipeline SDK simplifies creating data pipelines for RisingWave, a streaming database. It supports table discovery, pipeline creation, and integration with sources like PostgreSQL/MySQL/MongoDB and sinks like S3/Iceberg/Snowflake/Redshift.
+RisingWave Connect simplifies connecting to RisingWave, a streaming database. It supports table discovery, connection creation, and integration with sources like PostgreSQL/MySQL/MongoDB and sinks like S3/Iceberg/Snowflake/Redshift.
 
 ##
 

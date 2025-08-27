@@ -6,9 +6,9 @@ build-backend = "hatchling.build"
 exclude = ["/.git", "/venv", "/.venv", "/examples"]
 
 [project]
-name = "risingwave-pipeline-sdk"
-version = "0.1.1"
-description = "A Python SDK for building RisingWave data pipelines with PostgreSQL CDC and multiple sink destinations"
+name = "risingwave-connect"
+version = "0.2.0"
+description = "Python SDK for integrating RisingWave with various CDC sources (like PostgreSQL) and supporting multiple sink destinations such as Iceberg and S3."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -16,10 +16,10 @@ license-files = ["LICENSE"]
 authors = [{ name = "Yuxuan Liao", email = "yuxuan@risingwave-labs.com" }]
 keywords = [
     "risingwave",
-    "risingwave-pipeline-sdk",
-    "risingwave_pipeline_sdk",
+    "risingwave-connect",
+    "risingwave_connect",
     "cdc",
-    "data-pipeline",
+    "data-connector",
     "postgresql",
     "streaming",
     "iceberg",
@@ -40,9 +40,9 @@ classifiers = [
 dependencies = ["psycopg[binary]>=3.1", "pydantic>=2.7"]
 
 [project.urls]
-Homepage = "https://github.com/risingwavelabs/risingwave-pipeline-sdk"
-Repository = "https://github.com/risingwavelabs/risingwave-pipeline-sdk"
-Issues = "https://github.com/risingwavelabs/risingwave-pipeline-sdk/issues"
+Homepage = "https://github.com/risingwavelabs/risingwave-connect"
+Repository = "https://github.com/risingwavelabs/risingwave-connect"
+Issues = "https://github.com/risingwavelabs/risingwave-connect/issues"
 [dependency-groups]
 dev = [
     "pytest>=8.2",

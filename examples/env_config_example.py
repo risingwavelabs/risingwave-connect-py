@@ -1,9 +1,9 @@
 """Environment-based configuration example."""
 
 import os
-from risingwave_pipeline_sdk import (
+from risingwave_connect import (
     RisingWaveClient,
-    PipelineBuilder,
+    ConnectBuilder,
     PostgreSQLConfig,
     TableSelector
 )
@@ -35,8 +35,8 @@ def main():
             "CDC_AUTO_SCHEMA", "false").lower() == "true"
     )
 
-    # Create pipeline builder
-    builder = PipelineBuilder(client)
+    # Create connect builder
+    builder = ConnectBuilder(client)
 
     # Table selection from environment
     table_names = os.getenv("TABLE_NAMES", "").split(
@@ -51,7 +51,7 @@ def main():
     else:
         table_selector = TableSelector(include_all=True)
 
-    # Create pipeline
+    # Create connection
     result = builder.create_postgresql_pipeline(
         config=pg_config,
         table_selector=table_selector,
@@ -62,7 +62,7 @@ def main():
     print(f"Selected tables: {len(result['selected_tables'])}")
     for table in result['selected_tables']:
         print(f"  - {table.qualified_name}")
-    print("Environment-based pipeline setup complete!")
+    print("Environment-based connection setup complete!")
 
 
 if __name__ == "__main__":

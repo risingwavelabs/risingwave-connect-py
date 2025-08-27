@@ -2,12 +2,12 @@
 Example: Interactive Table Discovery and Selection
 
 This example shows how to interactively discover and select tables
-for PostgreSQL CDC pipeline creation.
+for PostgreSQL CDC connection creation.
 """
 
-from risingwave_pipeline_sdk import (
+from risingwave_connect import (
     RisingWaveClient,
-    PipelineBuilder,
+    ConnectBuilder,
     PostgreSQLConfig,
     TableSelector
 )
@@ -38,7 +38,7 @@ def main():
         backfill_parallelism="8"
     )
 
-    builder = PipelineBuilder(rw_client)
+    builder = ConnectBuilder(rw_client)
 
     # Step 1: Discover available schemas
     print("\n📂 Discovering schemas...")
@@ -160,19 +160,19 @@ def main():
     for table in selected_tables:
         print(f"  - {table.qualified_name}")
 
-    # Step 5: Confirm and create pipeline
+    # Step 5: Confirm and create connection
     confirm = input(
-        f"\n❓ Create CDC pipeline with {len(selected_tables)} tables? (y/N): ").strip().lower()
+        f"\n❓ Create CDC connection with {len(selected_tables)} tables? (y/N): ").strip().lower()
 
     if confirm in ['y', 'yes']:
-        print(f"\n🚀 Creating PostgreSQL CDC pipeline...")
+        print(f"\n🚀 Creating PostgreSQL CDC connection...")
         result = builder.create_postgresql_pipeline(
             config=pg_config,
             table_selector=table_selector,
             dry_run=False
         )
 
-        print(f"✅ Pipeline created successfully!")
+        print(f"✅ Connection created successfully!")
         print(f"  Source: {pg_config.source_name}")
         print(f"  Tables: {len(result['selected_tables'])}")
         print(
@@ -186,7 +186,7 @@ def main():
         print("="*80)
 
     else:
-        print("❌ Pipeline creation cancelled")
+        print("❌ Connection creation cancelled")
 
 
 if __name__ == "__main__":

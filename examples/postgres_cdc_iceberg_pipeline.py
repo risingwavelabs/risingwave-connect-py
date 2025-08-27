@@ -2,7 +2,9 @@
 """
 This example demonstrates a complete end-to-end pipeline:
 1. PostgreSQL CDC source
-2. Direct Iceberg sink from source tables
+2. Direct Iceberg sink from    print("\nPostgres CDC to Iceberg Connector")
+    print("=" * 40)
+    create_cdc_to_iceberg_connector()urce tables
 
 This follows the integration pattern shown in the RisingWave documentation.
 
@@ -15,13 +17,13 @@ Prerequisites:
 3. S3-compatible storage for Iceberg sink tables, or a local directory for testing
 """
 
-from risingwave_pipeline_sdk import (
-    RisingWaveClient, PipelineBuilder, PostgreSQLConfig, IcebergConfig
+from risingwave_connect import (
+    RisingWaveClient, ConnectBuilder, PostgreSQLConfig, IcebergConfig
 )
 
 
-def create_cdc_to_iceberg_pipeline():
-    """Create a complete CDC to Iceberg data pipeline."""
+def create_cdc_to_iceberg_connector():
+    """Create a complete CDC to Iceberg data connector."""
 
     # Initialize RisingWave client
     client = RisingWaveClient(
@@ -32,8 +34,8 @@ def create_cdc_to_iceberg_pipeline():
         database="dev"
     )
 
-    # Create pipeline builder
-    builder = PipelineBuilder(client)
+    # Create connect builder
+    builder = ConnectBuilder(client)
 
     print("Setting up PostgreSQL CDC to Iceberg Pipeline...")
 
@@ -49,7 +51,7 @@ def create_cdc_to_iceberg_pipeline():
         auto_schema_change=True,
     )
 
-    # Create CDC pipeline
+    # Create CDC connection
     print("Creating PostgreSQL CDC source...")
     source_tables = ["random_table_1", "dashboard"]
     cdc_result = builder.create_postgresql_pipeline(
@@ -135,9 +137,9 @@ def create_cdc_to_iceberg_pipeline():
 
 
 def main():
-    print("\nPostgres CDC to Iceberg Pipeline")
+    print("\nPostgres CDC to Iceberg Connector")
     print("-" * 50)
-    create_cdc_to_iceberg_pipeline()
+    create_cdc_to_iceberg_connector()
 
 
 if __name__ == "__main__":

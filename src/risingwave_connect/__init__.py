@@ -1,11 +1,11 @@
-"""RisingWave Pipeline SDK
+"""RisingWave Connect
 
-A Python SDK for creating and managing RisingWave data pipelines with table discovery and selection.
+A Python SDK for connecting to RisingWave with table discovery and selection.
 """
 
 from .client import RisingWaveClient
 from .models import Source, Table, Sink, MaterializedView
-from .pipeline_builder import PipelineBuilder, create_postgresql_cdc_pipeline
+from .connect_builder import ConnectBuilder, create_postgresql_cdc_pipeline
 from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLPipeline
 from .discovery.base import TableSelector, TableInfo, ColumnInfo
 
@@ -18,7 +18,7 @@ from .sinks.iceberg import IcebergConfig, IcebergSink
 __all__ = [
     # Core components
     "RisingWaveClient",
-    "PipelineBuilder",
+    "ConnectBuilder",
 
     # PostgreSQL components
     "PostgreSQLConfig",
@@ -48,4 +48,4 @@ __all__ = [
     "MaterializedView",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -1,6 +1,6 @@
-# RisingWave Pipeline SDK
+# RisingWave Connect
 
-A Python SDK for building RisingWave data pipelines with PostgreSQL CDC, automatic table discovery, and multiple sink destinations.
+A Python SDK for connecting to RisingWave with PostgreSQL CDC, automatic table discovery, and multiple sink destinations.
 
 ## Features
 
@@ -14,18 +14,18 @@ A Python SDK for building RisingWave data pipelines with PostgreSQL CDC, automat
 
 ```bash
 # Using uv (recommended)
-uv add risingwave-pipeline-sdk
+uv add risingwave-connect
 
 # Using pip
-pip install risingwave-pipeline-sdk
+pip install risingwave-connect
 ```
 
 ## Quick Start
 
 ```python
-from risingwave_pipeline_sdk import (
+from risingwave_connect import (
     RisingWaveClient,
-    PipelineBuilder,
+    ConnectBuilder,
     PostgreSQLConfig,
     TableSelector
 )
@@ -43,8 +43,8 @@ config = PostgreSQLConfig(
     auto_schema_change=True
 )
 
-# Create pipeline with table selection
-builder = PipelineBuilder(client)
+# Create connector with table selection
+builder = ConnectBuilder(client)
 result = builder.create_postgresql_pipeline(
     config=config,
     table_selector=TableSelector(include_patterns=["users", "orders"])
@@ -117,7 +117,7 @@ config = PostgreSQLConfig(
 ### Iceberg Data Lake
 
 ```python
-from risingwave_pipeline_sdk import IcebergConfig
+from risingwave_connect import IcebergConfig
 
 iceberg_config = IcebergConfig(
     sink_name="analytics_lake",
@@ -143,7 +143,7 @@ builder.create_sink(iceberg_config, ["events", "users"])
 ### S3 Data Archive
 
 ```python
-from risingwave_pipeline_sdk import S3Config
+from risingwave_connect import S3Config
 
 s3_config = S3Config(
     sink_name="data_archive",
@@ -164,7 +164,7 @@ builder.create_s3_sink(s3_config, ["users", "orders"])
 ### PostgreSQL Analytics Database
 
 ```python
-from risingwave_pipeline_sdk import PostgreSQLSinkConfig
+from risingwave_connect import PostgreSQLSinkConfig
 
 analytics_config = PostgreSQLSinkConfig(
     sink_name="analytics_db",
@@ -189,7 +189,7 @@ builder.create_postgresql_sink(
 )
 ```
 
-## Complete Pipeline Example
+## Complete Connection Example
 
 ```python
 # 1. Set up CDC source
@@ -200,7 +200,7 @@ cdc_result = builder.create_postgresql_pipeline(
 
 selected_tables = [t.qualified_name for t in cdc_result['selected_tables']]
 
-# 2. Create multiple sinks
+# Create data connections
 builder.create_s3_sink(s3_config, selected_tables)  # Data lake
 builder.create_postgresql_sink(analytics_config, selected_tables)  # Analytics
 builder.create_sink(iceberg_config, selected_tables)  # Iceberg warehouse
@@ -240,8 +240,8 @@ export TABLE_PATTERNS="users,orders,products"
 
 ```bash
 # Clone and set up development environment
-git clone https://github.com/risingwavelabs/risingwave-pipeline-sdk.git
-cd risingwave-pipeline-sdk
+git clone https://github.com/risingwavelabs/risingwave-connect.git
+cd risingwave-connect
 
 # Install with development dependencies
 uv venv
