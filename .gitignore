@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 .htmlcov/
+
+# Credentials and sensitive files
+*.env
+.env.*
