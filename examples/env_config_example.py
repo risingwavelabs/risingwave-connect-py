@@ -29,6 +29,7 @@ def main():
         password=os.getenv("PG_PASSWORD", ""),
         database=os.getenv("PG_DATABASE", "mydb"),
         schema_name=os.getenv("PG_SCHEMA", "public"),
+        ssl_mode=os.getenv("PG_SSL_MODE", "disabled"),
         slot_name=os.getenv("CDC_SLOT_NAME"),
         publication_name=os.getenv("CDC_PUBLICATION", "rw_publication"),
         auto_schema_change=os.getenv(

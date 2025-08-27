@@ -33,6 +33,7 @@ def main():
         password="secret",
         database="mydb",
         schema_name="public",
+        ssl_mode="disabled",
         auto_schema_change=True,
         backfill_num_rows_per_split="100000",
         backfill_parallelism="8"
