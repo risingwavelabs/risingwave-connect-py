@@ -21,13 +21,13 @@ class ConnectBuilder:
     def __init__(self, rw_client: RisingWaveClient):
         self.rw_client = rw_client
 
-    def create_postgresql_pipeline(
+    def create_postgresql_connection(
         self,
         config: PostgreSQLConfig,
         table_selector: Optional[Union[TableSelector, List[str]]] = None,
         dry_run: bool = False
     ) -> Dict[str, Any]:
-        """Create a complete PostgreSQL CDC pipeline with table discovery.
+        """Create a complete PostgreSQL CDC connection with table discovery.
 
         Args:
             config: PostgreSQL configuration
@@ -412,4 +412,4 @@ def create_postgresql_cdc_pipeline(
         selector = TableSelector(
             include_patterns=["*"], exclude_patterns=exclude_tables or [])
 
-    return builder.create_postgresql_pipeline(pg_config, selector, dry_run)
+    return builder.create_postgresql_connection(pg_config, selector, dry_run)

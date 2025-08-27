@@ -150,7 +150,7 @@ def main():
 
     # Step 4: Preview selection
     print(f"\n🔍 Previewing table selection...")
-    result = builder.create_postgresql_pipeline(
+    result = builder.create_postgresql_connection(
         config=pg_config,
         table_selector=table_selector,
         dry_run=True
@@ -167,7 +167,7 @@ def main():
 
     if confirm in ['y', 'yes']:
         print(f"\n🚀 Creating PostgreSQL CDC connection...")
-        result = builder.create_postgresql_pipeline(
+        result = builder.create_postgresql_connection(
             config=pg_config,
             table_selector=table_selector,
             dry_run=False

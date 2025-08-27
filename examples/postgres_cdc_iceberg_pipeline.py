@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 """
-This example demonstrates a complete end-to-end pipeline:
-1. PostgreSQL CDC source
-2. Direct Iceberg sink from    print("\nPostgres CDC to Iceberg Connector")
-    print("=" * 40)
-    create_cdc_to_iceberg_connector()urce tables
+Example: End-to-end PostgreSQL CDC to Iceberg connection.
 
-This follows the integration pattern shown in the RisingWave documentation.
+Steps:
+1. Capture changes from PostgreSQL using CDC.
+2. Sink data into Iceberg tables.
 
-Prerequisites:
-1. A running RisingWave instance (either in the cloud or locally)
-2. PostgreSQL configured for CDC with:
-    - Username: postgres
-    - Password: postgres
-    - Database: postgres
-3. S3-compatible storage for Iceberg sink tables, or a local directory for testing
+Requirements:
+- Running RisingWave instance (local or cloud)
+- Active PostgreSQL database
+- S3-compatible storage or local directory for Iceberg sink
 """
 
 from risingwave_connect import (
@@ -37,7 +32,7 @@ def create_cdc_to_iceberg_connector():
     # Create connect builder
     builder = ConnectBuilder(client)
 
-    print("Setting up PostgreSQL CDC to Iceberg Pipeline...")
+    print("Setting up PostgreSQL CDC to Iceberg Connection...")
 
     # Configure PostgreSQL CDC source
     postgres_config = PostgreSQLConfig(
@@ -54,7 +49,7 @@ def create_cdc_to_iceberg_connector():
     # Create CDC connection
     print("Creating PostgreSQL CDC source...")
     source_tables = ["random_table_1", "dashboard"]
-    cdc_result = builder.create_postgresql_pipeline(
+    cdc_result = builder.create_postgresql_connection(
         config=postgres_config,
         table_selector=source_tables,
         dry_run=True

@@ -45,7 +45,7 @@ config = PostgreSQLConfig(
 
 # Create connector with table selection
 builder = ConnectBuilder(client)
-result = builder.create_postgresql_pipeline(
+result = builder.create_postgresql_connection(
     config=config,
     table_selector=TableSelector(include_patterns=["users", "orders"])
 )
@@ -193,7 +193,7 @@ builder.create_postgresql_sink(
 
 ```python
 # 1. Set up CDC source
-cdc_result = builder.create_postgresql_pipeline(
+cdc_result = builder.create_postgresql_connection(
     config=postgres_config,
     table_selector=TableSelector(include_patterns=["user_*", "order_*"])
 )

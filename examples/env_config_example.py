@@ -53,7 +53,7 @@ def main():
         table_selector = TableSelector(include_all=True)
 
     # Create connection
-    result = builder.create_postgresql_pipeline(
+    result = builder.create_postgresql_connection(
         config=pg_config,
         table_selector=table_selector,
         dry_run=os.getenv("DRY_RUN", "false").lower() == "true"
