@@ -16,10 +16,10 @@ A Python SDK for connecting to RisingWave with PostgreSQL CDC, automatic table d
 
 ```bash
 # Using uv (recommended)
-uv add risingwave-connect
+uv add risingwave-connect-py
 
 # Using pip
-pip install risingwave-connect
+pip install risingwave-connect-py
 ```
 
 ## Quick Start
@@ -318,8 +318,8 @@ The `examples/` directory contains complete working examples:
 
 ```bash
 # Clone and set up development environment
-git clone https://github.com/risingwavelabs/risingwave-connect.git
-cd risingwave-connect
+git clone https://github.com/risingwavelabs/risingwave-connect-py.git
+cd risingwave-connect-py
 
 # Install with development dependencies
 uv venv

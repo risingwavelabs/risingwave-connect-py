@@ -796,7 +796,7 @@ wheels = [
 ]
 
 [[package]]
-name = "risingwave-connect"
+name = "risingwave-connect-py"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
