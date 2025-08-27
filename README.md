@@ -240,7 +240,7 @@ export TABLE_PATTERNS="users,orders,products"
 
 ```bash
 # Clone and set up development environment
-git clone https://github.com/Ad-Bean/risingwave-pipeline-sdk.git
+git clone https://github.com/risingwavelabs/risingwave-pipeline-sdk.git
 cd risingwave-pipeline-sdk
 
 # Install with development dependencies
@@ -264,4 +264,4 @@ ruff format .
 
 ## License
 
-MIT License
+Apache 2.0 License
