@@ -38,21 +38,21 @@ def create_cdc_to_iceberg_connector():
     postgres_config = PostgreSQLConfig(
         hostname="localhost",
         port=5432,
-        username="postgres",
-        password="postgres",
+        username="rwpipeline",
+        password="",
         database="postgres",
         schema_name="public",
-        ssl_mode="disabled",
+        ssl_mode="required",
         auto_schema_change=True,
     )
 
     # Create CDC connection
     print("Creating PostgreSQL CDC source...")
-    source_tables = ["random_table_1", "dashboard"]
+    source_tables = ["random_table_1", "dashboard"]  # Only existing tables
     cdc_result = builder.create_postgresql_connection(
         config=postgres_config,
         table_selector=source_tables,
-        dry_run=True
+        dry_run=True  # Safe to test
     )
 
     # print("Available tables:", cdc_result['available_tables'])

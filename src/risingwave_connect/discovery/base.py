@@ -35,6 +35,36 @@ class ColumnInfo:
     ordinal_position: int = 0
 
 
+@dataclass
+class ColumnSelection:
+    """Column selection specification for table creation."""
+    column_name: str
+    risingwave_type: Optional[str] = None  # Override RisingWave type if needed
+    is_primary_key: bool = False
+    is_nullable: Optional[bool] = None  # Override nullability if needed
+
+
+@dataclass
+class TableColumnConfig:
+    """Table configuration with column-level filtering."""
+    table_info: TableInfo
+    selected_columns: Optional[List[ColumnSelection]
+                               ] = None  # None means all columns
+    # Override table name in RisingWave
+    custom_table_name: Optional[str] = None
+
+    @property
+    def risingwave_table_name(self) -> str:
+        """Get the table name to use in RisingWave."""
+        return self.custom_table_name or self.table_info.table_name
+
+    def get_primary_key_columns(self) -> List[str]:
+        """Get list of primary key column names."""
+        if not self.selected_columns:
+            return []
+        return [col.column_name for col in self.selected_columns if col.is_primary_key]
+
+
 class TableSelector:
     """Utility for selecting tables based on patterns."""
 
@@ -115,6 +145,90 @@ class TableSelector:
         """Check if name matches pattern (supports * wildcards)."""
         import fnmatch
         return fnmatch.fnmatch(name.lower(), pattern.lower())
+
+
+def map_postgres_type_to_risingwave(postgres_type: str) -> str:
+    """Map PostgreSQL data type to RisingWave data type."""
+    # Convert to lowercase for consistent mapping
+    pg_type = postgres_type.lower()
+
+    # Handle common PostgreSQL types
+    type_mapping = {
+        # Integer types
+        'smallint': 'SMALLINT',
+        'integer': 'INT',
+        'int': 'INT',
+        'int4': 'INT',
+        'bigint': 'BIGINT',
+        'int8': 'BIGINT',
+
+        # Numeric types
+        'decimal': 'DECIMAL',
+        'numeric': 'DECIMAL',
+        'real': 'REAL',
+        'float4': 'REAL',
+        'double precision': 'DOUBLE',
+        'float8': 'DOUBLE',
+
+        # Character types
+        'character varying': 'VARCHAR',
+        'varchar': 'VARCHAR',
+        'character': 'VARCHAR',
+        'char': 'VARCHAR',
+        'text': 'VARCHAR',
+
+        # Boolean
+        'boolean': 'BOOLEAN',
+        'bool': 'BOOLEAN',
+
+        # Date/Time types
+        'timestamp': 'TIMESTAMP',
+        'timestamp without time zone': 'TIMESTAMP',
+        'timestamp with time zone': 'TIMESTAMPTZ',
+        'timestamptz': 'TIMESTAMPTZ',
+        'date': 'DATE',
+        'time': 'TIME',
+        'time without time zone': 'TIME',
+
+        # JSON types
+        'json': 'JSONB',
+        'jsonb': 'JSONB',
+
+        # Array types (simplified)
+        'array': 'VARCHAR',  # Arrays often need special handling
+
+        # UUID
+        'uuid': 'VARCHAR',
+
+        # Binary types
+        'bytea': 'BYTEA',
+    }
+
+    # Check for array types (ends with [])
+    if pg_type.endswith('[]'):
+        base_type = pg_type[:-2]
+        if base_type in type_mapping:
+            return f"{type_mapping[base_type]}[]"
+        return 'VARCHAR[]'  # Default for unknown array types
+
+    # Check for types with parameters (e.g., VARCHAR(255))
+    if '(' in pg_type:
+        base_type = pg_type.split('(')[0]
+        if base_type in type_mapping:
+            # For types like VARCHAR(255), keep the parameter
+            if base_type in ['character varying', 'varchar', 'character', 'char']:
+                return postgres_type.upper()  # Keep original formatting for VARCHAR(n)
+            elif base_type in ['decimal', 'numeric']:
+                return postgres_type.upper()  # Keep precision/scale for DECIMAL(p,s)
+            else:
+                return type_mapping[base_type]
+
+    # Direct mapping
+    if pg_type in type_mapping:
+        return type_mapping[pg_type]
+
+    # Default fallback
+    return 'VARCHAR'  # Safe default for unknown types
 
 
 class DatabaseDiscovery(ABC):

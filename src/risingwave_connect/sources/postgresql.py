@@ -13,7 +13,8 @@ from ..discovery.base import (
     SourceConnection,
     SourceConfig,
     TableInfo,
-    ColumnInfo
+    ColumnInfo,
+    ColumnSelection
 )
 
 logger = logging.getLogger(__name__)
@@ -260,6 +261,110 @@ class PostgreSQLDiscovery(DatabaseDiscovery):
                     ))
                 return columns
 
+    def validate_column_selection(self, table_info: TableInfo, column_selections: List[ColumnSelection]) -> Dict[str, Any]:
+        """Validate column selection against actual table schema.
+
+        Args:
+            table_info: Table information
+            column_selections: List of column selections
+
+        Returns:
+            Dictionary with validation results
+        """
+        from ..discovery.base import map_postgres_type_to_risingwave
+
+        # Get actual table columns
+        actual_columns = self.get_table_columns(
+            table_info.schema_name, table_info.table_name)
+        actual_column_map = {col.column_name: col for col in actual_columns}
+
+        # Validation results
+        validation_result = {
+            'valid': True,
+            'errors': [],
+            'warnings': [],
+            'column_mapping': {},
+            'primary_key_columns': [],
+            'missing_columns': [],
+            'type_overrides': {}
+        }
+
+        # Check each selected column
+        selected_column_names = [col.column_name for col in column_selections]
+        pk_columns = [
+            col.column_name for col in column_selections if col.is_primary_key]
+
+        for col_selection in column_selections:
+            col_name = col_selection.column_name
+
+            # Check if column exists in actual table
+            if col_name not in actual_column_map:
+                validation_result['valid'] = False
+                validation_result['errors'].append(
+                    f"Column '{col_name}' does not exist in table '{table_info.qualified_name}'"
+                )
+                validation_result['missing_columns'].append(col_name)
+                continue
+
+            actual_col = actual_column_map[col_name]
+
+            # Determine RisingWave type
+            if col_selection.risingwave_type:
+                rw_type = col_selection.risingwave_type
+                validation_result['type_overrides'][col_name] = rw_type
+            else:
+                rw_type = map_postgres_type_to_risingwave(actual_col.data_type)
+
+            # Check primary key consistency
+            if col_selection.is_primary_key and not actual_col.is_primary_key:
+                validation_result['errors'].append(
+                    f"Column '{col_name}' is marked as primary key in selection but is not a primary key in the upstream table"
+                )
+                validation_result['valid'] = False
+            elif actual_col.is_primary_key and not col_selection.is_primary_key:
+                validation_result['warnings'].append(
+                    f"Column '{col_name}' is a primary key in upstream table but not marked as such in selection"
+                )
+
+            # Check nullability
+            if col_selection.is_nullable is not None:
+                if col_selection.is_nullable != actual_col.is_nullable:
+                    validation_result['warnings'].append(
+                        f"Column '{col_name}' nullability override: upstream={actual_col.is_nullable}, selection={col_selection.is_nullable}"
+                    )
+
+            validation_result['column_mapping'][col_name] = {
+                'postgres_type': actual_col.data_type,
+                'risingwave_type': rw_type,
+                'is_nullable': col_selection.is_nullable if col_selection.is_nullable is not None else actual_col.is_nullable,
+                'is_primary_key': col_selection.is_primary_key,
+                'ordinal_position': actual_col.ordinal_position
+            }
+
+        # Validate primary key requirements
+        actual_pk_columns = [
+            col.column_name for col in actual_columns if col.is_primary_key]
+
+        if not pk_columns:
+            validation_result['errors'].append(
+                "No primary key columns specified. At least one primary key column is required for CDC."
+            )
+            validation_result['valid'] = False
+
+        # Check if we're missing any actual primary key columns
+        missing_pk_columns = set(actual_pk_columns) - \
+            set(selected_column_names)
+        if missing_pk_columns:
+            validation_result['errors'].append(
+                f"Missing primary key columns from upstream table: {list(missing_pk_columns)}. "
+                f"All primary key columns must be included for consistent CDC."
+            )
+            validation_result['valid'] = False
+
+        validation_result['primary_key_columns'] = pk_columns
+
+        return validation_result
+
 
 class PostgreSQLPipeline(SourceConnection):
     """PostgreSQL CDC pipeline implementation."""
@@ -319,8 +424,12 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
     def create_table_sql(self, table_info: TableInfo, **kwargs) -> str:
         """Generate CREATE TABLE SQL for a specific table."""
+        from ..discovery.base import TableColumnConfig, ColumnSelection, map_postgres_type_to_risingwave
+
         table_name = kwargs.get('table_name', table_info.table_name)
         rw_schema = kwargs.get('rw_schema', 'public')
+        # Optional TableColumnConfig
+        column_config = kwargs.get('column_config')
 
         # Build WITH clause for backfill configuration
         with_items = []
@@ -340,7 +449,69 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
         qualified_table_name = f"{rw_schema}.{table_name}" if rw_schema != "public" else table_name
 
-        return f"""-- Step 2: Create the CDC table on top of the shared source
+        # Handle column-level filtering
+        if column_config and isinstance(column_config, TableColumnConfig) and column_config.selected_columns:
+            # In dry_run mode, skip actual validation and use mock data
+            if hasattr(self, '_dry_run_mode') and self._dry_run_mode:
+                # Mock validation for dry run
+                validation_result = {
+                    'valid': True,
+                    'column_mapping': {},
+                    'primary_key_columns': [col.column_name for col in column_config.selected_columns if col.is_primary_key]
+                }
+                for col_selection in column_config.selected_columns:
+                    rw_type = col_selection.risingwave_type or "VARCHAR"
+                    validation_result['column_mapping'][col_selection.column_name] = {
+                        'risingwave_type': rw_type,
+                        'is_nullable': col_selection.is_nullable if col_selection.is_nullable is not None else True,
+                        'is_primary_key': col_selection.is_primary_key
+                    }
+            else:
+                # Create discovery instance to validate columns
+                discovery = PostgreSQLDiscovery(self.config)
+
+                # Validate column selection
+                validation_result = discovery.validate_column_selection(
+                    table_info, column_config.selected_columns)
+
+            if not validation_result['valid']:
+                raise ValueError(
+                    f"Column validation failed for table '{table_info.qualified_name}': " +
+                    "; ".join(validation_result['errors'])
+                )
+
+            # Build explicit column definitions
+            column_definitions = []
+            primary_key_columns = validation_result['primary_key_columns']
+
+            for col_selection in column_config.selected_columns:
+                col_name = col_selection.column_name
+                col_mapping = validation_result['column_mapping'][col_name]
+
+                # Build column definition
+                col_def = f"{col_name} {col_mapping['risingwave_type']}"
+
+                # Add constraints
+                if col_mapping['is_primary_key']:
+                    col_def += " PRIMARY KEY"
+                elif not col_mapping['is_nullable']:
+                    col_def += " NOT NULL"
+
+                column_definitions.append(col_def)
+
+            # Create table with explicit schema
+            columns_sql = ",\n    ".join(column_definitions)
+
+            return f"""-- Step 2: Create the CDC table with column filtering on top of the shared source
+CREATE TABLE IF NOT EXISTS {qualified_table_name} (
+    {columns_sql}
+) {with_clause}
+FROM {self.config.source_name}
+TABLE '{table_info.qualified_name}';"""
+
+        else:
+            # Default behavior: include all columns
+            return f"""-- Step 2: Create the CDC table on top of the shared source
 CREATE TABLE IF NOT EXISTS {qualified_table_name} (*) {with_clause}
 FROM {self.config.source_name}
 TABLE '{table_info.qualified_name}';"""

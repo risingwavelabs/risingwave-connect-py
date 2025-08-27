@@ -5,7 +5,7 @@ import logging
 from typing import Dict, List, Optional, Any, Union
 
 from .client import RisingWaveClient
-from .discovery.base import TableSelector, TableInfo
+from .discovery.base import TableSelector, TableInfo, TableColumnConfig
 from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLPipeline
 from .sinks.base import SinkConfig, SinkResult
 from .sinks.s3 import S3Config, S3Sink
@@ -25,6 +25,7 @@ class ConnectBuilder:
         self,
         config: PostgreSQLConfig,
         table_selector: Optional[Union[TableSelector, List[str]]] = None,
+        column_configs: Optional[Dict[str, TableColumnConfig]] = None,
         dry_run: bool = False
     ) -> Dict[str, Any]:
         """Create a complete PostgreSQL CDC connection with table discovery.
@@ -32,6 +33,7 @@ class ConnectBuilder:
         Args:
             config: PostgreSQL configuration
             table_selector: Table selection criteria. Can be a TableSelector object or a list of table names.
+            column_configs: Optional dictionary mapping table names to TableColumnConfig for column-level filtering
             dry_run: If True, return SQL without executing
 
         Returns:
@@ -40,6 +42,9 @@ class ConnectBuilder:
         # Initialize discovery and connection
         discovery = PostgreSQLDiscovery(config)
         pipeline = PostgreSQLPipeline(self.rw_client, config)
+
+        # Set dry_run mode on pipeline for column validation
+        pipeline._dry_run_mode = dry_run
 
         # Test connection (skip in dry run mode)
         if not dry_run and not discovery.test_connection():
@@ -130,7 +135,25 @@ class ConnectBuilder:
         logger.info(f"Selected {len(selected_tables)} tables for CDC")
 
         # Generate SQL
-        sql_statements = pipeline.create_connection_sql(selected_tables)
+        sql_statements = []
+
+        # Add source creation
+        sql_statements.append(pipeline.create_source_sql())
+
+        # Add table creations with column configurations
+        for table in selected_tables:
+            table_key = table.qualified_name
+            column_config = None
+
+            # Check if we have column configuration for this table
+            if column_configs:
+                # Try exact qualified name first, then just table name
+                column_config = column_configs.get(
+                    table_key) or column_configs.get(table.table_name)
+
+            table_sql = pipeline.create_table_sql(
+                table, column_config=column_config)
+            sql_statements.append(table_sql)
 
         if dry_run:
             return {

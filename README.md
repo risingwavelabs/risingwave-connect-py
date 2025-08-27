@@ -5,9 +5,11 @@ A Python SDK for connecting to RisingWave with PostgreSQL CDC, automatic table d
 ## Features
 
 - **PostgreSQL CDC Integration**: Complete Change Data Capture support with automatic schema discovery
-- **Flexible Table Selection**: Pattern-based, interactive, or programmatic table selection
+- **Table-Level Filtering**: Optimized table selection with pattern matching and validation
+- **Column-Level Filtering**: Selective column replication with type control and primary key validation
 - **Multiple Sink Support**: Iceberg, S3, and PostgreSQL destinations
 - **Advanced CDC Configuration**: SSL, backfilling, publication management, and more
+- **Performance Optimization**: Efficient discovery for specific tables, avoiding full database scans
 - **SQL Generation**: Automatically generates optimized RisingWave SQL statements
 
 ## Installation
@@ -65,23 +67,95 @@ for table in available_tables:
     print(f"{table.qualified_name} - {table.row_count} rows")
 ```
 
-### Flexible Table Selection
+### Table-Level Filtering
 
 ```python
 # Select specific tables
-TableSelector(specific_tables=["users", "orders", "products"])
+table_selector = ["users", "orders", "products"]
 
-# Pattern-based selection
-TableSelector(
+# Using TableSelector for specific tables
+from risingwave_connect.discovery.base import TableSelector
+table_selector = TableSelector(specific_tables=["users", "orders"])
+
+# Pattern-based selection (checks all tables, then filters)
+table_selector = TableSelector(
     include_patterns=["user_*", "order_*"],
     exclude_patterns=["*_temp", "*_backup"]
 )
 
 # Include all tables except specific ones
-TableSelector(
+table_selector = TableSelector(
     include_all=True,
     exclude_patterns=["temp_*", "backup_*"]
 )
+```
+
+### Column-Level Filtering
+
+Select specific columns, control types, and ensure primary key consistency.
+
+```python
+from risingwave_connect.discovery.base import (
+    TableColumnConfig, ColumnSelection, TableInfo
+)
+
+# Define table info
+users_table = TableInfo(
+    schema_name="public",
+    table_name="users",
+    table_type="BASE TABLE"
+)
+
+# Select specific columns with type control
+users_columns = [
+    ColumnSelection(
+        column_name="id",
+        is_primary_key=True,
+        risingwave_type="INT"  # Override type if needed
+    ),
+    ColumnSelection(
+        column_name="name",
+        risingwave_type="VARCHAR",
+        is_nullable=False
+    ),
+    ColumnSelection(
+        column_name="email",
+        risingwave_type="VARCHAR"
+    ),
+    ColumnSelection(
+        column_name="created_at",
+        risingwave_type="TIMESTAMP"
+    )
+    # Note: Excluding sensitive columns like 'password_hash'
+]
+
+# Create table configuration
+users_config = TableColumnConfig(
+    table_info=users_table,
+    selected_columns=users_columns,
+    custom_table_name="clean_users"  # Optional: custom name in RisingWave
+)
+
+# Apply column filtering
+column_configs = {"users": users_config}
+
+result = builder.create_postgresql_connection(
+    config=postgres_config,
+    table_selector=["users", "orders"],
+    column_configs=column_configs  # NEW parameter
+)
+```
+
+**Generated SQL with Column Filtering**:
+
+```sql
+CREATE TABLE clean_users (
+    id INT PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    email VARCHAR,
+    created_at TIMESTAMP
+)
+FROM postgres_source TABLE 'public.users';
 ```
 
 ## PostgreSQL CDC Configuration
@@ -112,6 +186,18 @@ config = PostgreSQLConfig(
 )
 ```
 
+### Schema Evolution
+
+RisingWave supports automatic schema changes for PostgreSQL CDC sources when `auto_schema_change=True` is enabled:
+
+For detailed information about schema evolution capabilities and limitations, see the [RisingWave Schema Evolution Documentation](https://docs.risingwave.com/ingestion/sources/postgresql/pg-cdc#automatic-schema-changes).
+
+### Supported Data Types
+
+RisingWave supports a comprehensive set of PostgreSQL data types for CDC replication. The SDK automatically maps PostgreSQL types to compatible RisingWave types.
+
+For the complete list of supported PostgreSQL data types and their RisingWave equivalents, see the [RisingWave Supported Data Types Documentation](https://docs.risingwave.com/ingestion/sources/postgresql/pg-cdc#supported-data-types).
+
 ## Sink Destinations
 
 ### Iceberg Data Lake
@@ -140,59 +226,74 @@ iceberg_config = IcebergConfig(
 builder.create_sink(iceberg_config, ["events", "users"])
 ```
 
-### S3 Data Archive
+## Complete Connection Examples
+
+### Basic CDC with All Columns
 
 ```python
-from risingwave_connect import S3Config
-
-s3_config = S3Config(
-    sink_name="data_archive",
-    bucket_name="my-data-bucket",
-    path="raw-data/",
-    region_name="us-east-1",
-    access_key_id="your-access-key",
-    secret_access_key="your-secret-key",
-
-    # Format configuration
-    format_type="PLAIN",
-    encode_type="PARQUET"
+# Simple table selection with all columns
+result = builder.create_postgresql_connection(
+    config=postgres_config,
+    table_selector=["users", "orders", "products"]  # Fast: only checks these tables
 )
 
-builder.create_s3_sink(s3_config, ["users", "orders"])
+selected_tables = [t.qualified_name for t in result['selected_tables']]
 ```
 
-### PostgreSQL Analytics Database
+### Advanced CDC with Column Filtering
 
 ```python
-from risingwave_connect import PostgreSQLSinkConfig
-
-analytics_config = PostgreSQLSinkConfig(
-    sink_name="analytics_db",
-    hostname="analytics.example.com",
-    port=5432,
-    username="analytics_user",
-    password="password",
-    database="analytics",
-    postgres_schema="real_time"
+from risingwave_connect.discovery.base import (
+    TableColumnConfig, ColumnSelection, TableInfo
 )
 
-# Create sink with custom transformations
-custom_queries = {
-    "users": "SELECT id, name, email, created_at FROM users WHERE active = true",
-    "orders": "SELECT * FROM orders WHERE status != 'cancelled'"
+# Configure selective columns for multiple tables
+users_config = TableColumnConfig(
+    table_info=TableInfo(schema_name="public", table_name="users"),
+    selected_columns=[
+        ColumnSelection(column_name="id", is_primary_key=True, risingwave_type="INT"),
+        ColumnSelection(column_name="name", risingwave_type="VARCHAR", is_nullable=False),
+        ColumnSelection(column_name="email", risingwave_type="VARCHAR"),
+        ColumnSelection(column_name="created_at", risingwave_type="TIMESTAMP")
+    ],
+    custom_table_name="clean_users"
+)
+
+orders_config = TableColumnConfig(
+    table_info=TableInfo(schema_name="public", table_name="orders"),
+    selected_columns=[
+        ColumnSelection(column_name="order_id", is_primary_key=True, risingwave_type="BIGINT"),
+        ColumnSelection(column_name="user_id", risingwave_type="INT", is_nullable=False),
+        ColumnSelection(column_name="total_amount", risingwave_type="DECIMAL(10,2)"),
+        ColumnSelection(column_name="status", risingwave_type="VARCHAR"),
+        ColumnSelection(column_name="created_at", risingwave_type="TIMESTAMP")
+    ]
+)
+
+# Apply column configurations
+column_configs = {
+    "users": users_config,
+    "orders": orders_config
+    # No config for 'products' - will include all columns
 }
 
-builder.create_postgresql_sink(
-    analytics_config,
-    ["users", "orders"],
-    select_queries=custom_queries
+# Create CDC with column filtering
+cdc_result = builder.create_postgresql_connection(
+    config=postgres_config,
+    table_selector=["users", "orders", "products"],
+    column_configs=column_configs
 )
+
+# Create sinks for filtered data
+selected_tables = [t.qualified_name for t in cdc_result['selected_tables']]
+builder.create_s3_sink(s3_config, selected_tables)
+builder.create_sink(iceberg_config, selected_tables)
 ```
 
-## Complete Connection Example
+### Multi-Destination Data Pipeline
 
 ```python
-# 1. Set up CDC source
+# 1. Set up CDC source with filtering
 cdc_result = builder.create_postgresql_connection(
     config=postgres_config,
     table_selector=TableSelector(include_patterns=["user_*", "order_*"])
@@ -200,7 +301,7 @@ cdc_result = builder.create_postgresql_connection(
 
 selected_tables = [t.qualified_name for t in cdc_result['selected_tables']]
 
-# Create data connections
+# 2. Create multiple data destinations
 builder.create_s3_sink(s3_config, selected_tables)  # Data lake
 builder.create_postgresql_sink(analytics_config, selected_tables)  # Analytics
 builder.create_sink(iceberg_config, selected_tables)  # Iceberg warehouse
@@ -211,30 +312,7 @@ builder.create_sink(iceberg_config, selected_tables)  # Iceberg warehouse
 The `examples/` directory contains complete working examples:
 
 - **`postgres_cdc_iceberg_pipeline.py`** - End-to-end CDC to Iceberg pipeline
-- **`interactive_discovery.py`** - Interactive table discovery and selection
-- **`env_config_example.py`** - Environment variable based configuration
-
-## Environment Configuration
-
-Configure using environment variables for production deployments:
-
-```bash
-# RisingWave connection
-export RW_HOST=localhost
-export RW_PORT=4566
-export RW_USER=root
-export RW_DATABASE=dev
-
-# PostgreSQL CDC source
-export PG_HOST=localhost
-export PG_PORT=5432
-export PG_USER=postgres
-export PG_PASSWORD=secret
-export PG_DATABASE=mydb
-
-# Table selection
-export TABLE_PATTERNS="users,orders,products"
-```
+- **`table_column_filtering_example.py`** - Comprehensive table and column filtering examples
 
 ## Development
 
