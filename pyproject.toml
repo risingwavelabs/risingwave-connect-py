@@ -5,9 +5,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.sdist]
 exclude = ["/.git", "/venv", "/.venv", "/examples"]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/risingwave_connect"]
+
 [project]
 name = "risingwave-connect-py"
-version = "0.2.0"
+version = "0.2.5"
 description = "Python SDK for integrating RisingWave with various CDC sources (like PostgreSQL) and supporting multiple sink destinations such as Iceberg and S3."
 readme = "README.md"
 requires-python = ">=3.10"
