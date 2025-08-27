@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, validator
 
 from ..discovery.base import (
     DatabaseDiscovery,
-    SourcePipeline,
+    SourceConnection,
     SourceConfig,
     TableInfo,
     ColumnInfo
@@ -155,6 +155,75 @@ class PostgreSQLDiscovery(DatabaseDiscovery):
                     ))
                 return tables
 
+    def check_specific_tables(self, table_names: List[str], schema_name: Optional[str] = None) -> List[TableInfo]:
+        """Check if specific tables exist and return their info.
+
+        This is more efficient than list_tables() when you only need to verify
+        specific tables exist.
+
+        Args:
+            table_names: List of table names to check (can include schema.table format)
+            schema_name: Default schema if table names don't include schema
+
+        Returns:
+            List of TableInfo for tables that exist
+        """
+        if not table_names:
+            return []
+
+        default_schema = schema_name or self.config.schema_name
+
+        with self._connection() as conn:
+            with conn.cursor() as cur:
+                # Build conditions for specific tables
+                table_conditions = []
+                params = []
+
+                for table_name in table_names:
+                    if '.' in table_name:
+                        schema, table = table_name.split('.', 1)
+                    else:
+                        schema = default_schema
+                        table = table_name
+
+                    table_conditions.append(
+                        "(t.table_schema = %s AND t.table_name = %s)")
+                    params.extend([schema, table])
+
+                if not table_conditions:
+                    return []
+
+                where_clause = " OR ".join(table_conditions)
+
+                cur.execute(f"""
+                    SELECT 
+                        t.table_schema,
+                        t.table_name,
+                        t.table_type,
+                        pg_stat.n_tup_ins + pg_stat.n_tup_upd + pg_stat.n_tup_del as row_count,
+                        pg_total_relation_size(pg_class.oid) as size_bytes,
+                        obj_description(pg_class.oid) as comment
+                    FROM information_schema.tables t
+                    LEFT JOIN pg_stat_user_tables pg_stat ON t.table_name = pg_stat.relname AND t.table_schema = pg_stat.schemaname
+                    LEFT JOIN pg_class ON t.table_name = pg_class.relname
+                    LEFT JOIN pg_namespace ON pg_class.relnamespace = pg_namespace.oid AND pg_namespace.nspname = t.table_schema
+                    WHERE ({where_clause})
+                    AND t.table_type IN ('BASE TABLE', 'VIEW')
+                    ORDER BY t.table_schema, t.table_name
+                """, params)
+
+                tables = []
+                for row in cur.fetchall():
+                    tables.append(TableInfo(
+                        schema_name=row[0],
+                        table_name=row[1],
+                        table_type=row[2],
+                        row_count=row[3] if row[3] is not None else 0,
+                        size_bytes=row[4] if row[4] is not None else 0,
+                        comment=row[5]
+                    ))
+                return tables
+
     def get_table_columns(self, schema_name: str, table_name: str) -> List[ColumnInfo]:
         """Get column information for a table."""
         with self._connection() as conn:
@@ -192,7 +261,7 @@ class PostgreSQLDiscovery(DatabaseDiscovery):
                 return columns
 
 
-class PostgreSQLPipeline(SourcePipeline):
+class PostgreSQLPipeline(SourceConnection):
     """PostgreSQL CDC pipeline implementation."""
 
     def __init__(self, rw_client, config: PostgreSQLConfig):

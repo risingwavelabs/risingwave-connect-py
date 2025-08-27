@@ -50,7 +50,6 @@ class ConnectBuilder:
         if dry_run:
             logger.info("Dry run mode: skipping actual table discovery")
             # Provide mock tables for demonstration
-            from risingwave_connect.discovery.base import TableInfo
             available_tables = [
                 TableInfo(
                     schema_name=config.schema_name,
@@ -64,13 +63,63 @@ class ConnectBuilder:
                 )
             ]
         else:
-            logger.info(
-                f"Discovering tables in schema '{config.schema_name}'...")
-            available_tables = discovery.list_tables(config.schema_name)
+            # Check if user provided specific tables
+            if table_selector and isinstance(table_selector, TableSelector) and table_selector.specific_tables:
+                # User provided specific tables - only check if those tables exist (more efficient)
+                logger.info(
+                    f"Checking existence of {len(table_selector.specific_tables)} specific tables...")
+                available_tables = discovery.check_specific_tables(
+                    table_selector.specific_tables, config.schema_name)
+
+                # Validate that all requested tables exist
+                existing_table_names = {
+                    table.qualified_name for table in available_tables}
+                existing_table_names.update(
+                    {table.table_name for table in available_tables})
+
+                missing_tables = []
+                for table_name in table_selector.specific_tables:
+                    if table_name not in existing_table_names:
+                        missing_tables.append(table_name)
+
+                if missing_tables:
+                    raise ValueError(
+                        f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
+                        f"Please verify the table names and ensure they exist before setting up CDC."
+                    )
+
+            elif isinstance(table_selector, list):
+                # table_selector is a list of table names - only check those specific tables
+                logger.info(
+                    f"Checking existence of {len(table_selector)} specific tables...")
+                available_tables = discovery.check_specific_tables(
+                    table_selector, config.schema_name)
+
+                # Validate that all requested tables exist
+                existing_table_names = {
+                    table.qualified_name for table in available_tables}
+                existing_table_names.update(
+                    {table.table_name for table in available_tables})
+
+                missing_tables = []
+                for table_name in table_selector:
+                    if table_name not in existing_table_names:
+                        missing_tables.append(table_name)
+
+                if missing_tables:
+                    raise ValueError(
+                        f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
+                        f"Please verify the table names and ensure they exist before setting up CDC."
+                    )
+            else:
+                # No specific tables provided - discover all tables in schema (slower)
+                logger.info(
+                    f"Discovering all tables in schema '{config.schema_name}'...")
+                available_tables = discovery.list_tables(config.schema_name)
 
         logger.info(f"Found {len(available_tables)} tables")
 
-        # Select tables
+        # Select tables: if table_selector is not specified, include all source tables
         if table_selector is None:
             table_selector = TableSelector(include_all=True)
         elif isinstance(table_selector, list):
@@ -81,7 +130,7 @@ class ConnectBuilder:
         logger.info(f"Selected {len(selected_tables)} tables for CDC")
 
         # Generate SQL
-        sql_statements = pipeline.create_pipeline_sql(selected_tables)
+        sql_statements = pipeline.create_connection_sql(selected_tables)
 
         if dry_run:
             return {

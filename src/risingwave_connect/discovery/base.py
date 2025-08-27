@@ -131,6 +131,22 @@ class DatabaseDiscovery(ABC):
         pass
 
     @abstractmethod
+    def check_specific_tables(self, table_names: List[str], schema_name: Optional[str] = None) -> List[TableInfo]:
+        """Check if specific tables exist and return their info.
+
+        This is more efficient than list_tables() when you only need to verify
+        specific tables exist.
+
+        Args:
+            table_names: List of table names to check (can include schema.table format)
+            schema_name: Default schema if table names don't include schema
+
+        Returns:
+            List of TableInfo for tables that exist
+        """
+        pass
+
+    @abstractmethod
     def get_table_columns(self, schema_name: str, table_name: str) -> List[ColumnInfo]:
         """Get column information for a specific table."""
         pass
@@ -160,8 +176,8 @@ class SourceConfig(BaseModel):
     backfill_as_even_splits: bool = True
 
 
-class SourcePipeline(ABC):
-    """Abstract base class for source pipelines."""
+class SourceConnection(ABC):
+    """Abstract base class for source connections."""
 
     def __init__(self, rw_client, config: SourceConfig):
         self.rw_client = rw_client
@@ -199,8 +215,8 @@ class SourcePipeline(ABC):
         """Generate CREATE TABLE SQL for a specific table."""
         pass
 
-    def create_pipeline_sql(self, selected_tables: List[TableInfo], **kwargs) -> List[str]:
-        """Generate complete pipeline SQL (source + tables)."""
+    def create_connection_sql(self, selected_tables: List[TableInfo], **kwargs) -> List[str]:
+        """Generate complete connection SQL (source + tables)."""
         sqls = []
 
         # Add source creation
