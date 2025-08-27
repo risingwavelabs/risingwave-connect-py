@@ -1,9 +1,4 @@
-"""
-Example: Environment-based Configuration
-
-This example shows how to configure the pipeline using environment variables,
-which is useful for different deployment environments.
-"""
+"""Environment-based configuration example."""
 
 import os
 from risingwave_pipeline_sdk import (
@@ -16,8 +11,6 @@ from risingwave_pipeline_sdk import (
 
 def main():
     # Configuration via environment variables
-    # RW_HOST, RW_PORT, RW_USER, RW_DATABASE
-    # PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_DATABASE
 
     client = RisingWaveClient(
         host=os.getenv("RW_HOST", "localhost"),
@@ -36,8 +29,6 @@ def main():
         password=os.getenv("PG_PASSWORD", ""),
         database=os.getenv("PG_DATABASE", "mydb"),
         schema_name=os.getenv("PG_SCHEMA", "public"),
-
-        # CDC-specific env vars
         slot_name=os.getenv("CDC_SLOT_NAME"),
         publication_name=os.getenv("CDC_PUBLICATION", "rw_publication"),
         auto_schema_change=os.getenv(
@@ -58,7 +49,6 @@ def main():
     elif table_patterns:
         table_selector = TableSelector(include_patterns=table_patterns)
     else:
-        # Default to include all tables
         table_selector = TableSelector(include_all=True)
 
     # Create pipeline

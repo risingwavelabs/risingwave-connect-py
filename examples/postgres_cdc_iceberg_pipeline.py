@@ -6,13 +6,13 @@ This example demonstrates a complete end-to-end pipeline:
 
 This follows the integration pattern shown in the RisingWave documentation.
 
-Prerequisites for local development:
-1. RisingWave running locally on port 4566
-2. PostgreSQL running locally on port 5432 with:
-   - Username: postgres
-   - Password: postgres
-   - Database: postgres
-3. Create the /tmp/iceberg-warehouse directory for local Iceberg storage
+Prerequisites:
+1. A running RisingWave instance (either in the cloud or locally)
+2. PostgreSQL configured for CDC with:
+    - Username: postgres
+    - Password: postgres
+    - Database: postgres
+3. S3-compatible storage for Iceberg sink tables, or a local directory for testing
 """
 
 from risingwave_pipeline_sdk import (
@@ -21,19 +21,14 @@ from risingwave_pipeline_sdk import (
 
 
 def create_cdc_to_iceberg_pipeline():
-    """Create a complete CDC to Iceberg data pipeline.
-
-    This demonstrates a direct CDC to Iceberg pipeline:
-    1. PostgreSQL CDC source
-    2. Direct Iceberg sink from source tables
-    """
+    """Create a complete CDC to Iceberg data pipeline."""
 
     # Initialize RisingWave client
     client = RisingWaveClient(
-        host="localhost",  # Local RisingWave instance
+        host="localhost",
         port=4566,
-        username="root",  # Default local username
-        password="",  # No password for local development
+        username="root",
+        password="",
         database="dev"
     )
 
@@ -42,26 +37,25 @@ def create_cdc_to_iceberg_pipeline():
 
     print("Setting up PostgreSQL CDC to Iceberg Pipeline...")
 
-    # 1. Configure PostgreSQL CDC source
+    # Configure PostgreSQL CDC source
     postgres_config = PostgreSQLConfig(
-        hostname="localhost",  # Local PostgreSQL instance
+        hostname="localhost",
         port=5432,
-        username="postgres",  # Default local PostgreSQL username
-        password="postgres",  # Default local PostgreSQL password
+        username="postgres",
+        password="postgres",
         database="postgres",
         schema_name="public",
-        ssl_mode="disabled",  # Disable SSL for local development
+        ssl_mode="disabled",
         auto_schema_change=True,
     )
 
-    # 2. Create CDC pipeline for user events
+    # Create CDC pipeline
     print("Creating PostgreSQL CDC source...")
     source_tables = ["random_table_1", "dashboard"]
     cdc_result = builder.create_postgresql_pipeline(
         config=postgres_config,
-        # Include non-existent table to test permissive behavior
         table_selector=source_tables,
-        dry_run=True  # Enable dry run for testing without actual connections
+        dry_run=True
     )
 
     # print("Available tables:", cdc_result['available_tables'])
@@ -77,33 +71,32 @@ def create_cdc_to_iceberg_pipeline():
         # sink_name not specified - will auto-generate based on database_name
 
         # Iceberg configuration
-        warehouse_path="file:///tmp/iceberg-warehouse",  # Local file system warehouse
+        warehouse_path="file:///tmp/iceberg-warehouse",
         database_name="pg_cdc",
         table_name="pg_dashboard",
-        catalog_type="storage",  # Use storage catalog for local development
+        catalog_type="storage",
         catalog_name="pg_cdc",
 
-        # Sink configuration - append-only for raw CDC data
-        data_type="append-only",
+        # Sink configuration
+        data_type="append-only",  # upsert
         force_append_only=True,
 
         # Advanced features for critical analytics data
         # is_exactly_once=True,
         create_table_if_not_exists=True,
 
-        # Local configuration - no S3 credentials needed
-        # s3_region="us-east-1",
-        # s3_access_key="YOUR_ACCESS_KEY",
-        # s3_secret_key="YOUR_SECRET_KEY"
+        # S3 credentials
+        s3_region="us-east-1",
+        s3_access_key="YOUR_ACCESS_KEY",
+        s3_secret_key="YOUR_SECRET_KEY"
     )
 
-    # 4. Create Iceberg sink directly from source tables
+    # Create Iceberg sink
     print("Creating Iceberg sink...")
     sink_result = builder.create_sink(
         sink_config=iceberg_config,
-        # Include non-existent table to test permissive behavior
         source_tables=source_tables,
-        dry_run=True  # Enable dry run for testing without actual connections
+        dry_run=True
     )
 
     for sql in sink_result['sql_statements']:
@@ -142,7 +135,6 @@ def create_cdc_to_iceberg_pipeline():
 
 
 def main():
-    # Example Postgres CDC to Iceberg Pipeline
     print("\nPostgres CDC to Iceberg Pipeline")
     print("-" * 50)
     create_cdc_to_iceberg_pipeline()

@@ -51,14 +51,6 @@ class MySQLDiscovery(DatabaseDiscovery):
 
     def _connection(self):
         """Get MySQL connection - implement based on your MySQL driver."""
-        # Example using mysql-connector-python:
-        # return mysql_connect(
-        #     host=self.config.hostname,
-        #     port=self.config.port,
-        #     user=self.config.username,
-        #     password=self.config.password,
-        #     database=self.config.database
-        # )
         raise NotImplementedError("Implement MySQL connection")
 
     def test_connection(self) -> bool:
@@ -151,11 +143,8 @@ class MySQLPipeline(SourcePipeline):
 
     def create_source_sql(self) -> str:
         """Generate CREATE SOURCE SQL for MySQL CDC."""
-        # Note: RisingWave MySQL CDC connector syntax would go here
-        # This is a template - check RisingWave docs for actual MySQL connector syntax
-
         with_items = [
-            "connector='mysql-cdc'",  # Hypothetical MySQL connector
+            "connector='mysql-cdc'",
             f"hostname='{self._escape_sql_string(self.config.hostname)}'",
             f"port='{self.config.port}'",
             f"username='{self._escape_sql_string(self.config.username)}'",
@@ -183,8 +172,7 @@ class MySQLPipeline(SourcePipeline):
 
         with_clause = ",\\n    ".join(with_items)
 
-        return f"""-- Create MySQL CDC source {self.config.source_name}
-CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
+        return f"""CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
     {with_clause}
 );"""
 
@@ -211,8 +199,7 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
         qualified_table_name = f"{rw_schema}.{table_name}" if rw_schema != "public" else table_name
 
-        return f"""-- Create table from MySQL source
-CREATE TABLE IF NOT EXISTS {qualified_table_name} (*) {with_clause}
+        return f"""CREATE TABLE IF NOT EXISTS {qualified_table_name} (*) {with_clause}
 FROM {self.config.source_name}
 TABLE '{table_info.qualified_name}';"""
 
@@ -221,58 +208,26 @@ TABLE '{table_info.qualified_name}';"""
         return value.replace("'", "''") if value else ""
 
 
-# Similar templates can be created for:
-
 class SQLServerConfig(SourceConfig):
     """SQL Server-specific configuration."""
-    # Add SQL Server specific options
     instance_name: Optional[str] = None
     encrypt: bool = True
     trust_server_certificate: bool = False
-
-    # CDC options for SQL Server
     database_history_kafka_topic: Optional[str] = None
 
 
 class MongoDBConfig(SourceConfig):
     """MongoDB-specific configuration."""
-    # MongoDB doesn't use traditional schema/table concepts
     replica_set: Optional[str] = None
     auth_source: str = "admin"
-
-    # Collection selection
     collection_include_list: Optional[str] = None
     collection_exclude_list: Optional[str] = None
 
 
 class KafkaConfig(SourceConfig):
     """Kafka-specific configuration."""
-    # Kafka is different - it's a streaming source, not a database
     bootstrap_servers: str
     topic: str
     consumer_group: Optional[str] = None
-
-    # Format and encoding
-    message_format: str = "JSON"  # JSON, AVRO, etc.
+    message_format: str = "JSON"
     schema_registry_url: Optional[str] = None
-
-
-# Usage example for extending the pipeline builder:
-"""
-def create_mysql_pipeline(
-    rw_client: RisingWaveClient,
-    mysql_config: MySQLConfig,
-    table_selector: Optional[TableSelector] = None,
-    dry_run: bool = False
-) -> Dict[str, Any]:
-    discovery = MySQLDiscovery(mysql_config)
-    pipeline = MySQLPipeline(rw_client, mysql_config)
-    
-    # Same logic as PostgreSQL implementation
-    available_tables = discovery.list_tables()
-    selected_tables = table_selector.select_tables(available_tables)
-    sql_statements = pipeline.create_pipeline_sql(selected_tables)
-    
-    # Execute or return SQL
-    ...
-"""

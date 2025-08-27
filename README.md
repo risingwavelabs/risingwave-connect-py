@@ -1,31 +1,26 @@
 # RisingWave Pipeline SDK
 
-A Python SDK for creating and managing RisingWave data pipelines with **automatic table discovery and selection**. Build streaming data pipelines from PostgreSQL, MySQL, Kafka, and other sources using a simple Python API.
+A Python SDK for building RisingWave data pipelines with PostgreSQL CDC, automatic table discovery, and multiple sink destinations.
 
-## 🚀 Features
+## Features
 
-- **🔍 Table Discovery**: Automatically discover tables, schemas, and metadata from source databases
-- **📋 Table Selection**: Flexible table selection with patterns, exclusions, or interactive selection
-- **⚡ Advanced Backfill**: Configure parallel backfilling with custom row splits and parallelism
-- **🛠️ Easy Pipeline Creation**: High-level API to create RisingWave sources, tables, and materialized views
-- **🐘 PostgreSQL CDC**: Full support for PostgreSQL Change Data Capture with automatic schema mapping
-- **🔧 Flexible Configuration**: Configure via Python objects, environment variables, or CLI flags
-- **🔗 Connection Management**: Automatic connection pooling and error handling
-- **📜 SQL Generation**: Generates optimized RisingWave SQL statements
+- **PostgreSQL CDC Integration**: Complete Change Data Capture support with automatic schema discovery
+- **Flexible Table Selection**: Pattern-based, interactive, or programmatic table selection
+- **Multiple Sink Support**: Iceberg, S3, and PostgreSQL destinations
+- **Advanced CDC Configuration**: SSL, backfilling, publication management, and more
+- **SQL Generation**: Automatically generates optimized RisingWave SQL statements
 
-## 📦 Installation
+## Installation
 
 ```bash
-# Install with uv (recommended)
+# Using uv (recommended)
 uv add risingwave-pipeline-sdk
 
-# Or with pip
+# Using pip
 pip install risingwave-pipeline-sdk
 ```
 
-## 🎯 Quick Start
-
-### Table Discovery and Selection
+## Quick Start
 
 ```python
 from risingwave_pipeline_sdk import (
@@ -36,286 +31,237 @@ from risingwave_pipeline_sdk import (
 )
 
 # Connect to RisingWave
-rw_client = RisingWaveClient("postgresql://root@localhost:4566/dev")
+client = RisingWaveClient("postgresql://root@localhost:4566/dev")
 
-# Configure PostgreSQL with advanced options
-pg_config = PostgreSQLConfig(
-    source_name="ecommerce_cdc",
+# Configure PostgreSQL CDC
+config = PostgreSQLConfig(
     hostname="localhost",
     port=5432,
     username="postgres",
     password="secret",
-    database="ecommerce",
-    schema_name="public",
-
-    # CDC Configuration
-    auto_schema_change=True,
-    publication_name="rw_publication",
-    ssl_mode="require",
-
-    # Advanced backfill configuration
-    backfill_num_rows_per_split="100000",
-    backfill_parallelism="8",
-    backfill_as_even_splits=True
+    database="mydb",
+    auto_schema_change=True
 )
 
-# Create pipeline builder
-builder = PipelineBuilder(rw_client)
+# Create pipeline with table selection
+builder = PipelineBuilder(client)
+result = builder.create_postgresql_pipeline(
+    config=config,
+    table_selector=TableSelector(include_patterns=["users", "orders"])
+)
 
-# 🔍 Discover available tables
-available_tables = builder.discover_postgresql_tables(pg_config)
-print(f"Found {len(available_tables)} tables:")
+print(f"Created CDC source with {len(result['selected_tables'])} tables")
+```
+
+## Table Discovery and Selection
+
+### Discover Available Tables
+
+```python
+# Discover all available tables
+available_tables = builder.discover_postgresql_tables(config)
+
 for table in available_tables:
-    print(f"  - {table.qualified_name} ({table.row_count} rows)")
+    print(f"{table.qualified_name} - {table.row_count} rows")
+```
 
-# 📋 Select tables using flexible criteria
-table_selector = TableSelector(
-    include_patterns=["user_*", "order_*", "product_*"],
+### Flexible Table Selection
+
+```python
+# Select specific tables
+TableSelector(specific_tables=["users", "orders", "products"])
+
+# Pattern-based selection
+TableSelector(
+    include_patterns=["user_*", "order_*"],
     exclude_patterns=["*_temp", "*_backup"]
 )
 
-# 🚀 Create complete pipeline
-result = builder.create_postgresql_pipeline(
-    config=pg_config,
-    table_selector=table_selector
+# Include all tables except specific ones
+TableSelector(
+    include_all=True,
+    exclude_patterns=["temp_*", "backup_*"]
 )
-
-print(f"✅ Created source: {pg_config.source_name}")
-print(f"✅ Created {len(result['selected_tables'])} tables")
 ```
 
-### Generated SQL Example
-
-The SDK automatically generates optimized SQL like this:
-
-```sql
--- Step 1: Create the shared CDC source
-CREATE SOURCE IF NOT EXISTS ecommerce_cdc WITH (
-    connector='postgres-cdc',
-    hostname='localhost',
-    port='5432',
-    username='postgres',
-    password='secret',
-    database.name='ecommerce',
-    schema.name='public',
-    ssl.mode='require',
-    publication.name='rw_publication',
-    publication.create.enable='true',
-    auto.schema.change='true'
-);
-
--- Step 2: Create tables with advanced backfill
-CREATE TABLE IF NOT EXISTS users (*)
-WITH (
-    backfill.num_rows_per_split='100000',
-    backfill.parallelism='8',
-    backfill.as_even_splits='true'
-)
-FROM ecommerce_cdc
-TABLE 'public.users';
-
-CREATE TABLE IF NOT EXISTS orders (*)
-WITH (
-    backfill.num_rows_per_split='100000',
-    backfill.parallelism='8',
-    backfill.as_even_splits='true'
-)
-FROM ecommerce_cdc
-TABLE 'public.orders';
-```
-
-## 📤 Sink Configuration
-
-The SDK supports creating sinks to various destinations after setting up your sources:
-
-### S3 Data Lake Sink
+## PostgreSQL CDC Configuration
 
 ```python
-from risingwave_pipeline_sdk import S3Config, PipelineBuilder
+config = PostgreSQLConfig(
+    # Connection details
+    hostname="localhost",
+    port=5432,
+    username="postgres",
+    password="secret",
+    database="mydb",
+    schema_name="public",
 
-# Configure S3 sink for data archival
-s3_config = S3Config(
-    sink_name="ecommerce_data_lake",
-    region_name="us-east-1",
-    bucket_name="my-data-lake",
-    path="ecommerce/cdc_data/",
-    access_key_id="your-access-key",
-    secret_access_key="your-secret-key",
+    # CDC settings
+    auto_schema_change=True,
+    publication_name="rw_publication",
+    slot_name="rw_slot",
 
-    # Data format configuration
+    # SSL configuration
+    ssl_mode="require",
+    ssl_root_cert="/path/to/ca.pem",
+
+    # Performance tuning
+    backfill_parallelism="8",
+    backfill_num_rows_per_split="100000",
+    backfill_as_even_splits=True
+)
+```
+
+## Sink Destinations
+
+### Iceberg Data Lake
+
+```python
+from risingwave_pipeline_sdk import IcebergConfig
+
+iceberg_config = IcebergConfig(
+    sink_name="analytics_lake",
+    warehouse_path="s3://my-warehouse/",
+    database_name="analytics",
+    table_name="events",
+    catalog_type="storage",
+
+    # S3 configuration
+    s3_region="us-east-1",
+    s3_access_key="your-access-key",
+    s3_secret_key="your-secret-key",
+
+    # Data type
     data_type="append-only",
-    format_type="PLAIN",
-    encode_type="PARQUET",
     force_append_only=True
 )
 
-# Create S3 sinks for selected tables
-builder = PipelineBuilder(rw_client)
-s3_result = builder.create_s3_sink(
-    s3_config=s3_config,
-    source_tables=["public.users", "public.orders"],
-    dry_run=True  # See generated SQL
-)
-
-# Generated SQL:
-# CREATE SINK IF NOT EXISTS ecommerce_data_lake_public_users
-# FROM public.users
-# WITH (
-#     connector='s3',
-#     s3.region_name='us-east-1',
-#     s3.bucket_name='my-data-lake',
-#     s3.path='ecommerce/cdc_data/',
-#     type='append-only'
-# )
-# FORMAT PLAIN ENCODE PARQUET(force_append_only=true);
+# Create sink
+builder.create_sink(iceberg_config, ["events", "users"])
 ```
 
-### PostgreSQL Analytics Sink
+### S3 Data Archive
+
+```python
+from risingwave_pipeline_sdk import S3Config
+
+s3_config = S3Config(
+    sink_name="data_archive",
+    bucket_name="my-data-bucket",
+    path="raw-data/",
+    region_name="us-east-1",
+    access_key_id="your-access-key",
+    secret_access_key="your-secret-key",
+
+    # Format configuration
+    format_type="PLAIN",
+    encode_type="PARQUET"
+)
+
+builder.create_s3_sink(s3_config, ["users", "orders"])
+```
+
+### PostgreSQL Analytics Database
 
 ```python
 from risingwave_pipeline_sdk import PostgreSQLSinkConfig
 
-# Configure PostgreSQL sink for real-time analytics
-pg_sink_config = PostgreSQLSinkConfig(
-    sink_name="realtime_analytics",
-    hostname="analytics-db.example.com",
+analytics_config = PostgreSQLSinkConfig(
+    sink_name="analytics_db",
+    hostname="analytics.example.com",
     port=5432,
     username="analytics_user",
-    password="analytics_password",
+    password="password",
     database="analytics",
-    postgres_schema="real_time",
-    data_type="append-only",
-    ssl_mode="require"
+    postgres_schema="real_time"
 )
 
-# Create PostgreSQL sinks with custom queries
+# Create sink with custom transformations
 custom_queries = {
-    "public.users": "SELECT id, name, email, created_at FROM public.users WHERE active = true",
-    "public.orders": "SELECT order_id, user_id, total, status, created_at FROM public.orders"
+    "users": "SELECT id, name, email, created_at FROM users WHERE active = true",
+    "orders": "SELECT * FROM orders WHERE status != 'cancelled'"
 }
 
-pg_result = builder.create_postgresql_sink(
-    pg_sink_config=pg_sink_config,
-    source_tables=["public.users", "public.orders"],
-    select_queries=custom_queries,
-    dry_run=True
+builder.create_postgresql_sink(
+    analytics_config,
+    ["users", "orders"],
+    select_queries=custom_queries
 )
-
-# Generated SQL:
-# CREATE SINK IF NOT EXISTS realtime_analytics_public_users
-# AS SELECT id, name, email, created_at FROM public.users WHERE active = true
-# WITH (
-#     connector='postgres',
-#     postgres.host='analytics-db.example.com',
-#     postgres.port='5432',
-#     postgres.user='analytics_user',
-#     postgres.password='analytics_password',
-#     postgres.database='analytics',
-#     postgres.table='real_time.realtime_analytics_public_users',
-#     type='append-only'
-# );
 ```
 
-### Complete Pipeline: Source → RisingWave → Multiple Sinks
+## Complete Pipeline Example
 
 ```python
-# 1. Create PostgreSQL CDC source
-pipeline_result = builder.create_postgresql_pipeline(
-    config=pg_source_config,
-    table_selector=table_selector
+# 1. Set up CDC source
+cdc_result = builder.create_postgresql_pipeline(
+    config=postgres_config,
+    table_selector=TableSelector(include_patterns=["user_*", "order_*"])
 )
 
-selected_tables = [table.qualified_name for table in pipeline_result['selected_tables']]
+selected_tables = [t.qualified_name for t in cdc_result['selected_tables']]
 
-# 2. Create S3 sink for data lake archival
-s3_result = builder.create_s3_sink(s3_config, selected_tables)
-
-# 3. Create PostgreSQL sink for real-time analytics
-pg_result = builder.create_postgresql_sink(pg_sink_config, selected_tables)
-
-# 4. Create additional sinks (templates available)
-# - Snowflake for data warehouse
-# - Kafka for event streaming
-# - Elasticsearch for search
-# - Iceberg for data lake
+# 2. Create multiple sinks
+builder.create_s3_sink(s3_config, selected_tables)  # Data lake
+builder.create_postgresql_sink(analytics_config, selected_tables)  # Analytics
+builder.create_sink(iceberg_config, selected_tables)  # Iceberg warehouse
 ```
 
-## ⚙️ Advanced Configuration
+## Examples
 
-### PostgreSQL CDC with All Options
+The `examples/` directory contains complete working examples:
 
-```python
-from risingwave_pipeline_sdk import PostgreSQLConfig
+- **`postgres_cdc_iceberg_pipeline.py`** - End-to-end CDC to Iceberg pipeline
+- **`interactive_discovery.py`** - Interactive table discovery and selection
+- **`env_config_example.py`** - Environment variable based configuration
 
-config = PostgreSQLConfig(
-    # Basic connection
-    source_name="advanced_cdc",
-    hostname="postgres.example.com",
-    port=5432,
-    username="rwuser",
-    password="secret",
-    database="production",
-    schema_name="public",
+## Environment Configuration
 
-    # CDC Configuration
-    slot_name="rw_slot_production",
-    publication_name="rw_publication",
-    publication_create_enable=True,
-    auto_schema_change=True,
-
-    # SSL Configuration
-    ssl_mode="require",
-    ssl_root_cert="/path/to/ca.pem",
-
-    # Backfill Configuration
-    backfill_num_rows_per_split="100000",
-    backfill_parallelism="8",
-    backfill_as_even_splits=True,
-
-    # Advanced Debezium Properties
-    debezium_properties={
-        "schema.history.internal.skip.unparseable.ddl": "true",
-        "decimal.handling.mode": "string",
-        "transforms": "unwrap"
-    },
-
-    # Extra WITH Properties
-    extra_properties={
-        "wal2json.message.prefix": "rw_"
-    }
-)
-```
-
-## 🔧 Extensibility
-
-The SDK is designed for easy extension to other database types:
-
-```python
-# Template for adding new source types
-from risingwave_pipeline_sdk.sources.templates import (
-    MySQLConfig, MySQLDiscovery, MySQLPipeline,
-    SQLServerConfig, MongoDBConfig, KafkaConfig
-)
-
-# Each source type follows the same pattern:
-# 1. Config class with source-specific options
-# 2. Discovery class for table/schema introspection
-# 3. Pipeline class for SQL generation
-```
-
-See `src/risingwave_pipeline_sdk/sources/templates.py` for implementation templates.
-
-## 🏗️ Development
+Configure using environment variables for production deployments:
 
 ```bash
-git clone <repo>
+# RisingWave connection
+export RW_HOST=localhost
+export RW_PORT=4566
+export RW_USER=root
+export RW_DATABASE=dev
+
+# PostgreSQL CDC source
+export PG_HOST=localhost
+export PG_PORT=5432
+export PG_USER=postgres
+export PG_PASSWORD=secret
+export PG_DATABASE=mydb
+
+# Table selection
+export TABLE_PATTERNS="users,orders,products"
+```
+
+## Development
+
+```bash
+# Clone and set up development environment
+git clone https://github.com/Ad-Bean/risingwave-pipeline-sdk.git
 cd risingwave-pipeline-sdk
+
+# Install with development dependencies
 uv venv
 source .venv/bin/activate
 uv pip install -e .[dev]
+
+# Run tests
 pytest
+
+# Format code
+ruff format .
 ```
 
-## 📄 License
+## Requirements
+
+- Python ≥ 3.10
+- RisingWave instance (local or cloud)
+- PostgreSQL with CDC enabled
+- Required Python packages: `psycopg[binary]`, `pydantic`
+
+## License
 
 MIT License

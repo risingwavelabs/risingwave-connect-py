@@ -1,19 +1,4 @@
-"""
-Template implementations for additional sink types.
-
-This file shows how to extend the sink system to support:
-- Snowflake
-- Iceberg  
-- Elasticsearch
-- Redshift
-- MySQL
-- Kafka
-
-Each implementation follows the same pattern:
-1. Create a config class inheriting from SinkConfig
-2. Create a sink class inheriting from SinkPipeline
-3. Implement the required methods
-"""
+"""Template implementations for additional sink types."""
 
 from __future__ import annotations
 from typing import Optional, Dict, Any
@@ -373,14 +358,8 @@ FORMAT {self.config.format_type};"""
         return value.replace("'", "''")
 
 
-# =============================================================================
-# USAGE EXAMPLES
-# =============================================================================
-
 def example_usage():
-    """Show example usage of the template sinks."""
-
-    print("🔸 Snowflake Sink Example:")
+    """Show example usage of template sinks."""
     snowflake_config = SnowflakeConfig(
         sink_name="orders_to_snowflake",
         account="xy12345.us-east-1",
@@ -395,7 +374,6 @@ def example_usage():
     snowflake_sink = SnowflakeSink(snowflake_config)
     print(snowflake_sink.create_sink_sql("public.orders"))
 
-    print("\n🔸 Kafka Sink Example:")
     kafka_config = KafkaConfig(
         sink_name="events_to_kafka",
         bootstrap_servers="localhost:9092",
