@@ -40,9 +40,9 @@ classifiers = [
 dependencies = ["psycopg[binary]>=3.1", "pydantic>=2.7"]
 
 [project.urls]
-Homepage = "https://github.com/risingwavelabs/risingwave-connect"
-Repository = "https://github.com/risingwavelabs/risingwave-connect"
-Issues = "https://github.com/risingwavelabs/risingwave-connect/issues"
+Homepage = "https://github.com/risingwavelabs/risingwave-connect-py"
+Repository = "https://github.com/risingwavelabs/risingwave-connect-py"
+Issues = "https://github.com/risingwavelabs/risingwave-connect-py/issues"
 [dependency-groups]
 dev = [
     "pytest>=8.2",
