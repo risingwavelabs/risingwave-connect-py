@@ -1,6 +1,7 @@
 """Tests for Iceberg sink implementation."""
 
 import pytest
+from pydantic import ValidationError
 from risingwave_connect.sinks.iceberg import IcebergConfig, IcebergSink
 
 
@@ -324,32 +325,26 @@ class TestIcebergSink:
 
     def test_validation_missing_warehouse_path(self):
         """Test validation fails for missing warehouse path."""
-        config = IcebergConfig(
-            sink_name="test_sink",
-            warehouse_path="",
-            database_name="test_db",
-            table_name="test_table",
-            catalog_type="storage",
-            s3_region="us-west-2"
-        )
-
-        sink = IcebergSink(config)
-        with pytest.raises(ValueError, match="warehouse_path is required"):
-            sink.validate_config()
+        with pytest.raises(ValidationError, match="String should have at least 1 character"):
+            IcebergConfig(
+                sink_name="test_sink",
+                warehouse_path="",
+                database_name="test_db",
+                table_name="test_table",
+                catalog_type="storage",
+                s3_region="us-west-2"
+            )
 
     def test_validation_s3_missing_region(self):
         """Test validation fails for S3 without region."""
-        config = IcebergConfig(
-            sink_name="test_sink",
-            warehouse_path="s3://bucket/warehouse",
-            database_name="test_db",
-            table_name="test_table",
-            catalog_type="storage"
-        )
-
-        sink = IcebergSink(config)
-        with pytest.raises(ValueError, match="s3_region is required for S3 storage"):
-            sink.validate_config()
+        with pytest.raises(ValidationError, match="Either s3.region or s3.endpoint must be specified for S3 storage"):
+            IcebergConfig(
+                sink_name="test_sink",
+                warehouse_path="s3://bucket/warehouse",
+                database_name="test_db",
+                table_name="test_table",
+                catalog_type="storage"
+            )
 
     def test_create_sink_success(self):
         """Test successful sink creation."""
@@ -373,14 +368,30 @@ class TestIcebergSink:
 
     def test_create_sink_failure(self):
         """Test sink creation with invalid configuration."""
+        with pytest.raises(ValidationError, match="String should have at least 1 character"):
+            IcebergConfig(
+                sink_name="test_sink",
+                warehouse_path="",  # Invalid
+                database_name="test_db",
+                table_name="test_table",
+                catalog_type="storage",
+                s3_region="us-west-2"
+            )
+
+    def test_create_sink_validation_failure(self):
+        """Test sink creation with validation that fails during sink creation."""
+        # Create a config that passes initial validation but fails during sink operations
         config = IcebergConfig(
             sink_name="test_sink",
-            warehouse_path="",  # Invalid
+            warehouse_path="s3://bucket/warehouse",
             database_name="test_db",
             table_name="test_table",
             catalog_type="storage",
             s3_region="us-west-2"
         )
+
+        # Manually break the config after creation to simulate runtime validation failure
+        config.warehouse_path = ""
 
         sink = IcebergSink(config)
         result = sink.create_sink("source_table")

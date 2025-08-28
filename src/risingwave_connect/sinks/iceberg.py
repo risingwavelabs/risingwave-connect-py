@@ -111,33 +111,22 @@ class IcebergConfig(SinkConfig):
         default_factory=dict, description="Additional WITH properties"
     )
 
-    @field_validator('primary_key')
-    @classmethod
-    def validate_primary_key(cls, v, info):
-        """Validate primary key is provided for upsert sinks."""
-        data_type = info.data.get('data_type')
-        if data_type == 'upsert' and not v:
+    @model_validator(mode='after')
+    def validate_upsert_requirements(self):
+        """Validate upsert requirements."""
+        if self.data_type == 'upsert' and not self.primary_key:
             raise ValueError("primary_key is required for upsert sinks")
-        return v
+        return self
 
-    @field_validator('catalog_name')
-    @classmethod
-    def validate_catalog_name(cls, v, info):
-        """Validate catalog name is provided for glue catalog."""
-        catalog_type = info.data.get('catalog_type')
-        if catalog_type == 'glue' and not v:
+    @model_validator(mode='after')
+    def validate_catalog_requirements(self):
+        """Validate catalog-specific requirements."""
+        if self.catalog_type == 'glue' and not self.catalog_name:
             raise ValueError("catalog_name is required for glue catalog")
-        return v
-
-    @field_validator('catalog_uri')
-    @classmethod
-    def validate_catalog_uri(cls, v, info):
-        """Validate catalog URI is provided for rest/jdbc catalogs."""
-        catalog_type = info.data.get('catalog_type')
-        if catalog_type in ['rest', 'jdbc'] and not v:
+        if self.catalog_type in ['rest', 'jdbc'] and not self.catalog_uri:
             raise ValueError(
-                f"catalog_uri is required for {catalog_type} catalog")
-        return v
+                f"catalog_uri is required for {self.catalog_type} catalog")
+        return self
 
     @field_validator('commit_checkpoint_interval')
     @classmethod
