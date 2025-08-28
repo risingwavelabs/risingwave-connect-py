@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from contextlib import contextmanager
 
 import psycopg
@@ -33,8 +33,8 @@ class PostgreSQLConfig(SourceConfig):
         publication_name: PostgreSQL publication name (default: rw_publication) 
         publication_create_enable: Auto-create publication if missing (default: True)
         transactional: Ensures atomic processing of upstream transactions (default: True)
-        backfill_num_rows_per_split: Number of rows per split for parallel backfill (e.g., '100000')
-        backfill_parallelism: Number of parallel workers for backfill (e.g., '8')
+        backfill_num_rows_per_split: Number of rows per split for parallel backfill (e.g., '100000' or 100000)
+        backfill_parallelism: Number of parallel workers for backfill (e.g., '8' or 8)
         backfill_as_even_splits: Whether to distribute rows evenly across splits (default: False)
     """
 
@@ -56,6 +56,17 @@ class PostgreSQLConfig(SourceConfig):
                 f"ssl_mode must be one of: {', '.join(valid_modes)}")
         return v
 
+    @field_validator('backfill_num_rows_per_split', 'backfill_parallelism')
+    @classmethod
+    def validate_backfill_params(cls, v):
+        """Convert integer backfill parameters to strings."""
+        if v is None:
+            return v
+        # Convert integers to strings for SQL generation
+        if isinstance(v, int):
+            return str(v)
+        return v
+
     # CDC Configuration
     slot_name: Optional[str] = None
     # Optional: defaults to 'rw_publication' if not specified
@@ -64,9 +75,9 @@ class PostgreSQLConfig(SourceConfig):
     publication_create_enable: Optional[bool] = None
 
     # Parallel backfill configuration (optional)
-    backfill_num_rows_per_split: Optional[str] = None  # e.g., '100000'
-    backfill_parallelism: Optional[str] = None         # e.g., '8'
-    backfill_as_even_splits: Optional[bool] = None     # e.g., True
+    backfill_num_rows_per_split: Optional[Union[str, int]] = None  # e.g., '100000' or 100000
+    backfill_parallelism: Optional[Union[str, int]] = None         # e.g., '8' or 8
+    backfill_as_even_splits: Optional[bool] = None                 # e.g., True
 
     # Transactional processing (optional)
     # Ensures atomic processing of upstream transactions (default: True)
@@ -479,12 +490,12 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
         if backfill_as_even_splits is None:
             backfill_as_even_splits = self.config.backfill_as_even_splits
 
-        if backfill_num_rows_per_split:
+        if backfill_num_rows_per_split is not None:
             with_items.append(
                 f"backfill.num_rows_per_split='{backfill_num_rows_per_split}'")
-        if backfill_parallelism:
+        if backfill_parallelism is not None:
             with_items.append(f"backfill.parallelism='{backfill_parallelism}'")
-        if backfill_as_even_splits:
+        if backfill_as_even_splits is not None:
             with_items.append(
                 f"backfill.as_even_splits='{str(backfill_as_even_splits).lower()}'")
 

@@ -44,7 +44,9 @@ def create_cdc_to_iceberg_connector():
         schema_name="public",
         ssl_mode="required",
         auto_schema_change=True,
-
+        backfill_as_even_splits=False,
+        backfill_parallelism=2,
+        backfill_num_rows_per_split=5999,
     )
 
     # Create CDC connection
