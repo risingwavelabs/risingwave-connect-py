@@ -24,8 +24,9 @@ class PostgreSQLConfig(SourceConfig):
     """PostgreSQL-specific configuration.
 
     Args:
-        ssl_mode: Required SSL/TLS encryption mode. 
+        ssl_mode: Optional SSL/TLS encryption mode. 
                  Accepted values: disabled, preferred, required, verify-ca, verify-full
+                 If not specified, PostgreSQL will use its default SSL behavior.
         ssl_root_cert: Optional path to CA certificate for SSL verification
         schema_name: PostgreSQL schema name (default: public)
         slot_name: Optional replication slot name
@@ -35,12 +36,14 @@ class PostgreSQLConfig(SourceConfig):
 
     # PostgreSQL specific
     schema_name: str = "public"
-    ssl_mode: str  # Required: SSL/TLS encryption mode
+    ssl_mode: Optional[str] = None  # Optional: SSL/TLS encryption mode
     ssl_root_cert: Optional[str] = None
 
     @validator('ssl_mode')
     def validate_ssl_mode(cls, v):
         """Validate SSL mode values."""
+        if v is None:
+            return v
         valid_modes = ['disabled', 'preferred',
                        'required', 'verify-ca', 'verify-full']
         if v not in valid_modes:
@@ -73,8 +76,19 @@ class PostgreSQLDiscovery(DatabaseDiscovery):
         self._dsn = self._build_dsn()
 
     def _build_dsn(self) -> str:
-        """Build PostgreSQL connection string."""
-        return f"postgresql://{self.config.username}:{self.config.password}@{self.config.hostname}:{self.config.port}/{self.config.database}"
+        """Build PostgreSQL connection string with SSL support."""
+        from urllib.parse import quote
+
+        base_dsn = f"postgresql://{self.config.username}:{self.config.password}@{self.config.hostname}:{self.config.port}/{self.config.database}"
+        params = []
+        if self.config.ssl_mode:
+            params.append(f"sslmode={self.config.ssl_mode}")
+        if self.config.ssl_root_cert:
+            params.append(f"sslrootcert={quote(self.config.ssl_root_cert)}")
+
+        if params:
+            base_dsn += "?" + "&".join(params)
+        return base_dsn
 
     @contextmanager
     def _connection(self):
@@ -366,8 +380,8 @@ class PostgreSQLDiscovery(DatabaseDiscovery):
         return validation_result
 
 
-class PostgreSQLPipeline(SourceConnection):
-    """PostgreSQL CDC pipeline implementation."""
+class PostgreSQLSourceConnection(SourceConnection):
+    """PostgreSQL CDC source connection implementation."""
 
     def __init__(self, rw_client, config: PostgreSQLConfig):
         super().__init__(rw_client, config)

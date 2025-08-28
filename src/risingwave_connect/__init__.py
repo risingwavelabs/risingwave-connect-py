@@ -5,8 +5,8 @@ A Python SDK for connecting to RisingWave with table discovery and selection.
 
 from .client import RisingWaveClient
 from .models import Source, Table, Sink, MaterializedView
-from .connect_builder import ConnectBuilder, create_postgresql_cdc_pipeline
-from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLPipeline
+from .connect_builder import ConnectBuilder, create_postgresql_cdc_source_connection
+from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLSourceConnection
 from .discovery.base import TableSelector, TableInfo, ColumnInfo
 
 # Sink components
@@ -23,8 +23,8 @@ __all__ = [
     # PostgreSQL components
     "PostgreSQLConfig",
     "PostgreSQLDiscovery",
-    "PostgreSQLPipeline",
-    "create_postgresql_cdc_pipeline",
+    "PostgreSQLSourceConnection",
+    "create_postgresql_cdc_source_connection",
 
     # Discovery and selection
     "TableSelector",

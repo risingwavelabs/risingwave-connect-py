@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any, Union
 
 from .client import RisingWaveClient
 from .discovery.base import TableSelector, TableInfo, TableColumnConfig
-from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLPipeline
+from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLSourceConnection
 from .sinks.base import SinkConfig, SinkResult
 from .sinks.s3 import S3Config, S3Sink
 from .sinks.postgresql import PostgreSQLSinkConfig, PostgreSQLSink
@@ -41,10 +41,10 @@ class ConnectBuilder:
         """
         # Initialize discovery and connection
         discovery = PostgreSQLDiscovery(config)
-        pipeline = PostgreSQLPipeline(self.rw_client, config)
+        pg_source = PostgreSQLSourceConnection(self.rw_client, config)
 
         # Set dry_run mode on pipeline for column validation
-        pipeline._dry_run_mode = dry_run
+        pg_source._dry_run_mode = dry_run
 
         # Test connection (skip in dry run mode)
         if not dry_run and not discovery.test_connection():
@@ -70,7 +70,7 @@ class ConnectBuilder:
         else:
             # Check if user provided specific tables
             if table_selector and isinstance(table_selector, TableSelector) and table_selector.specific_tables:
-                # User provided specific tables - only check if those tables exist (more efficient)
+                # User provided specific tables - only check if those tables exist
                 logger.info(
                     f"Checking existence of {len(table_selector.specific_tables)} specific tables...")
                 available_tables = discovery.check_specific_tables(
@@ -117,7 +117,7 @@ class ConnectBuilder:
                         f"Please verify the table names and ensure they exist before setting up CDC."
                     )
             else:
-                # No specific tables provided - discover all tables in schema (slower)
+                # No specific tables provided - discover all tables in schema
                 logger.info(
                     f"Discovering all tables in schema '{config.schema_name}'...")
                 available_tables = discovery.list_tables(config.schema_name)
@@ -138,7 +138,7 @@ class ConnectBuilder:
         sql_statements = []
 
         # Add source creation
-        sql_statements.append(pipeline.create_source_sql())
+        sql_statements.append(pg_source.create_source_sql())
 
         # Add table creations with column configurations
         for table in selected_tables:
@@ -151,7 +151,7 @@ class ConnectBuilder:
                 column_config = column_configs.get(
                     table_key) or column_configs.get(table.table_name)
 
-            table_sql = pipeline.create_table_sql(
+            table_sql = pg_source.create_table_sql(
                 table, column_config=column_config)
             sql_statements.append(table_sql)
 
@@ -451,7 +451,7 @@ class ConnectBuilder:
 
 
 # Convenience functions for backward compatibility
-def create_postgresql_cdc_pipeline(
+def create_postgresql_cdc_source_connection(
     rw_client: RisingWaveClient,
     pg_config: PostgreSQLConfig,
     include_all_tables: bool = False,
@@ -459,7 +459,7 @@ def create_postgresql_cdc_pipeline(
     exclude_tables: Optional[List[str]] = None,
     dry_run: bool = False
 ) -> Dict[str, Any]:
-    """Convenience function to create PostgreSQL CDC pipeline.
+    """Convenience function to create PostgreSQL CDC source connection.
 
     Args:
         rw_client: RisingWave client
@@ -470,7 +470,7 @@ def create_postgresql_cdc_pipeline(
         dry_run: If True, return SQL without executing
 
     Returns:
-        Pipeline creation results
+        Source connection creation results
     """
     builder = ConnectBuilder(rw_client)
 
