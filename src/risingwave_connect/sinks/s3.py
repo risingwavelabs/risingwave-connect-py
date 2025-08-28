@@ -3,7 +3,7 @@
 from __future__ import annotations
 import logging
 from typing import Optional, Dict, Any
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 
 from .base import SinkConfig, SinkPipeline, SinkResult
 
@@ -40,7 +40,8 @@ class S3Config(SinkConfig):
     extra_properties: Dict[str, Any] = Field(
         default_factory=dict, description="Additional WITH properties")
 
-    @validator('data_type')
+    @field_validator('data_type')
+    @classmethod
     def validate_data_type(cls, v):
         """Validate data type."""
         allowed = ['append-only']
@@ -48,7 +49,8 @@ class S3Config(SinkConfig):
             raise ValueError(f"data_type must be one of {allowed}, got {v}")
         return v
 
-    @validator('format_type')
+    @field_validator('format_type')
+    @classmethod
     def validate_format_type(cls, v):
         """Validate format type."""
         allowed = ['PLAIN', 'UPSERT', 'DEBEZIUM']
@@ -56,7 +58,8 @@ class S3Config(SinkConfig):
             raise ValueError(f"format_type must be one of {allowed}, got {v}")
         return v
 
-    @validator('encode_type')
+    @field_validator('encode_type')
+    @classmethod
     def validate_encode_type(cls, v):
         """Validate encode type."""
         allowed = ['PARQUET', 'JSON', 'CSV']

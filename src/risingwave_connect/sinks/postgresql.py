@@ -3,7 +3,7 @@
 from __future__ import annotations
 import logging
 from typing import Optional, Dict, Any
-from pydantic import Field, validator
+from pydantic import Field, field_validator
 
 from .base import SinkConfig, SinkPipeline, SinkResult
 
@@ -37,7 +37,8 @@ class PostgreSQLSinkConfig(SinkConfig):
     extra_properties: Dict[str, Any] = Field(
         default_factory=dict, description="Additional WITH properties")
 
-    @validator('data_type')
+    @field_validator('data_type')
+    @classmethod
     def validate_data_type(cls, v):
         """Validate data type."""
         allowed = ['append-only', 'upsert']
@@ -45,7 +46,8 @@ class PostgreSQLSinkConfig(SinkConfig):
             raise ValueError(f"data_type must be one of {allowed}, got {v}")
         return v
 
-    @validator('port')
+    @field_validator('port')
+    @classmethod
     def validate_port(cls, v):
         """Validate port number."""
         if not (1 <= v <= 65535):

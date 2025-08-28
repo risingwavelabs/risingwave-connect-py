@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 from contextlib import contextmanager
 
 import psycopg
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from ..discovery.base import (
     DatabaseDiscovery,
@@ -39,7 +39,8 @@ class PostgreSQLConfig(SourceConfig):
     ssl_mode: Optional[str] = None  # Optional: SSL/TLS encryption mode
     ssl_root_cert: Optional[str] = None
 
-    @validator('ssl_mode')
+    @field_validator('ssl_mode')
+    @classmethod
     def validate_ssl_mode(cls, v):
         """Validate SSL mode values."""
         if v is None:
