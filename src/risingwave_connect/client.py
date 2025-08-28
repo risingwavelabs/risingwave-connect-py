@@ -23,11 +23,33 @@ class RisingWaveConfig(BaseModel):
     database: str = "dev"
     schema_name: str = "public"
 
+    # SSL Configuration
+    # disabled, preferred, required, verify-ca, verify-full
+    ssl_mode: Optional[str] = None
+    ssl_root_cert: Optional[str] = None
+    connect_timeout: int = 30
+
     def dsn(self) -> str:
         """Build PostgreSQL connection string for RisingWave."""
+        # Build base DSN
         if self.password:
-            return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
-        return f"postgresql://{self.user}@{self.host}:{self.port}/{self.database}"
+            base_dsn = f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+        else:
+            base_dsn = f"postgresql://{self.user}@{self.host}:{self.port}/{self.database}"
+
+        # Add SSL and connection parameters
+        params = []
+        if self.ssl_mode:  # Only add if explicitly provided
+            params.append(f"sslmode={self.ssl_mode}")
+        if self.ssl_root_cert:
+            params.append(f"sslrootcert={quote(self.ssl_root_cert)}")
+        if self.connect_timeout != 30:  # Only add if not default
+            params.append(f"connect_timeout={self.connect_timeout}")
+
+        if params:
+            base_dsn += "?" + "&".join(params)
+
+        return base_dsn
 
 
 class RisingWaveClient:
@@ -44,6 +66,9 @@ class RisingWaveClient:
         password: Optional[str] = None,
         database: str = "dev",
         schema: str = "public",
+        ssl_mode: Optional[str] = None,
+        ssl_root_cert: Optional[str] = None,
+        connect_timeout: int = 30,
     ):
         """Initialize RisingWave client.
 
@@ -56,6 +81,9 @@ class RisingWaveClient:
             password: Password
             database: Database name
             schema: Default schema
+            ssl_mode: SSL mode (disabled, preferred, required, verify-ca, verify-full)
+            ssl_root_cert: Path to SSL root certificate
+            connect_timeout: Connection timeout in seconds
         """
         # Handle username alias
         if username is not None:
@@ -72,6 +100,9 @@ class RisingWaveClient:
                 password=password,
                 database=database,
                 schema_name=schema,
+                ssl_mode=ssl_mode,
+                ssl_root_cert=ssl_root_cert,
+                connect_timeout=connect_timeout,
             )
             self._dsn = self.config.dsn()
 
@@ -164,3 +195,45 @@ class RisingWaveClient:
             (source_name, schema)
         )
         return result is not None
+
+    def health_check(self) -> bool:
+        """Check if RisingWave is healthy and responsive.
+
+        Returns:
+            True if RisingWave is healthy, False otherwise
+        """
+        try:
+            result = self.fetch_one("SELECT 1")
+            return result == (1,)
+        except Exception as e:
+            logger.warning(f"Health check failed: {e}")
+            return False
+
+    def get_version(self) -> str:
+        """Get RisingWave version.
+
+        Returns:
+            RisingWave version string
+        """
+        try:
+            result = self.fetch_one("SELECT version()")
+            return result[0] if result else "Unknown"
+        except Exception as e:
+            logger.warning(f"Failed to get version: {e}")
+            return "Unknown"
+
+    def list_schemas(self) -> list[str]:
+        """List all schemas.
+
+        Returns:
+            List of schema names
+        """
+        results = self.fetch_all(
+            """
+            SELECT schema_name FROM information_schema.schemata 
+            WHERE schema_name NOT LIKE 'pg_%' 
+            AND schema_name NOT IN ('information_schema', 'rw_catalog')
+            ORDER BY schema_name
+            """
+        )
+        return [row[0] for row in results]
