@@ -33,6 +33,9 @@ class PostgreSQLConfig(SourceConfig):
         publication_name: PostgreSQL publication name (default: rw_publication) 
         publication_create_enable: Auto-create publication if missing (default: True)
         transactional: Ensures atomic processing of upstream transactions (default: True)
+        backfill_num_rows_per_split: Number of rows per split for parallel backfill (e.g., '100000')
+        backfill_parallelism: Number of parallel workers for backfill (e.g., '8')
+        backfill_as_even_splits: Whether to distribute rows evenly across splits (default: False)
     """
 
     # PostgreSQL specific
@@ -466,15 +469,24 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
         # Build WITH clause for backfill configuration
         with_items = []
-        if self.config.backfill_num_rows_per_split:
+
+        # Check for backfill parameters from config (global) or kwargs (table-specific)
+        backfill_num_rows_per_split = kwargs.get(
+            'backfill_num_rows_per_split') or self.config.backfill_num_rows_per_split
+        backfill_parallelism = kwargs.get(
+            'backfill_parallelism') or self.config.backfill_parallelism
+        backfill_as_even_splits = kwargs.get('backfill_as_even_splits')
+        if backfill_as_even_splits is None:
+            backfill_as_even_splits = self.config.backfill_as_even_splits
+
+        if backfill_num_rows_per_split:
             with_items.append(
-                f"backfill.num_rows_per_split='{self.config.backfill_num_rows_per_split}'")
-        if self.config.backfill_parallelism:
+                f"backfill.num_rows_per_split='{backfill_num_rows_per_split}'")
+        if backfill_parallelism:
+            with_items.append(f"backfill.parallelism='{backfill_parallelism}'")
+        if backfill_as_even_splits:
             with_items.append(
-                f"backfill.parallelism='{self.config.backfill_parallelism}'")
-        if self.config.backfill_as_even_splits:
-            with_items.append(
-                f"backfill.as_even_splits='{str(self.config.backfill_as_even_splits).lower()}'")
+                f"backfill.as_even_splits='{str(backfill_as_even_splits).lower()}'")
 
         # Add snapshot parameter if provided
         snapshot = kwargs.get('snapshot')

@@ -44,6 +44,7 @@ def create_cdc_to_iceberg_connector():
         schema_name="public",
         ssl_mode="required",
         auto_schema_change=True,
+
     )
 
     # Create CDC connection
