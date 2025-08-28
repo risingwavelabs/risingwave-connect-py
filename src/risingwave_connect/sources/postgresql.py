@@ -32,6 +32,7 @@ class PostgreSQLConfig(SourceConfig):
         slot_name: Optional replication slot name
         publication_name: PostgreSQL publication name (default: rw_publication) 
         publication_create_enable: Auto-create publication if missing (default: True)
+        transactional: Ensures atomic processing of upstream transactions (default: True)
     """
 
     # PostgreSQL specific
@@ -63,6 +64,10 @@ class PostgreSQLConfig(SourceConfig):
     backfill_num_rows_per_split: Optional[str] = None  # e.g., '100000'
     backfill_parallelism: Optional[str] = None         # e.g., '8'
     backfill_as_even_splits: Optional[bool] = None     # e.g., True
+
+    # Transactional processing (optional)
+    # Ensures atomic processing of upstream transactions (default: True)
+    transactional: Optional[bool] = None
 
     # Advanced Debezium properties
     debezium_properties: Dict[str, str] = Field(default_factory=dict)
@@ -418,6 +423,10 @@ class PostgreSQLSourceConnection(SourceConnection):
             with_items.append(
                 f"publication.create.enable='{str(self.config.publication_create_enable).lower()}'")
 
+        if self.config.transactional is not None:
+            with_items.append(
+                f"transactional='{str(self.config.transactional).lower()}'")
+
         with_items.append(
             f"auto.schema.change='{str(self.config.auto_schema_change).lower()}'")
 
@@ -438,7 +447,16 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 );"""
 
     def create_table_sql(self, table_info: TableInfo, **kwargs) -> str:
-        """Generate CREATE TABLE SQL for a specific table."""
+        """Generate CREATE TABLE SQL for a specific table.
+
+        Args:
+            table_info: Table information
+            **kwargs: Additional parameters including:
+                - table_name: Override table name in RisingWave
+                - rw_schema: RisingWave schema name
+                - column_config: TableColumnConfig for column filtering
+                - snapshot: If False, disables initial snapshot (default: True)
+        """
         from ..discovery.base import TableColumnConfig, ColumnSelection, map_postgres_type_to_risingwave
 
         table_name = kwargs.get('table_name', table_info.table_name)
@@ -457,6 +475,11 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
         if self.config.backfill_as_even_splits:
             with_items.append(
                 f"backfill.as_even_splits='{str(self.config.backfill_as_even_splits).lower()}'")
+
+        # Add snapshot parameter if provided
+        snapshot = kwargs.get('snapshot')
+        if snapshot is not None:
+            with_items.append(f"snapshot='{str(snapshot).lower()}'")
 
         with_clause = ""
         if with_items:
