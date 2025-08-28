@@ -9,8 +9,6 @@ A Python SDK for connecting to RisingWave with PostgreSQL CDC, automatic table d
 - **Column-Level Filtering**: Selective column replication with type control and primary key validation
 - **Multiple Sink Support**: Iceberg, S3, and PostgreSQL destinations
 - **Advanced CDC Configuration**: SSL, backfilling, publication management, and more
-- **Performance Optimization**: Efficient discovery for specific tables, avoiding full database scans
-- **SQL Generation**: Automatically generates optimized RisingWave SQL statements
 
 ## Installation
 
