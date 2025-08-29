@@ -104,7 +104,16 @@ class PostgreSQLDiscovery(DatabaseDiscovery):
         base_dsn = f"postgresql://{self.config.username}:{self.config.password}@{self.config.hostname}:{self.config.port}/{self.config.database}"
         params = []
         if self.config.ssl_mode:
-            params.append(f"sslmode={self.config.ssl_mode}")
+            # Convert RisingWave SSL mode format to psycopg format
+            ssl_mode_mapping = {
+                'disabled': 'disable',
+                'preferred': 'prefer', 
+                'required': 'require',
+                'verify-ca': 'verify-ca',
+                'verify-full': 'verify-full'
+            }
+            psycopg_ssl_mode = ssl_mode_mapping.get(self.config.ssl_mode, self.config.ssl_mode)
+            params.append(f"sslmode={psycopg_ssl_mode}")
         if self.config.ssl_root_cert:
             params.append(f"sslrootcert={quote(self.config.ssl_root_cert)}")
 
