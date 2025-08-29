@@ -508,7 +508,8 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
         with_clause = ""
         if with_items:
-            with_clause = f"\nWITH (\n    {',\n    '.join(with_items)}\n)"
+                joined_items = ',\n    '.join(with_items)
+                with_clause = f"\nWITH (\n    {joined_items}\n)"
 
         qualified_table_name = f"{rw_schema}.{table_name}" if rw_schema != "public" else table_name
 
