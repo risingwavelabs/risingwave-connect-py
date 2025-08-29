@@ -75,8 +75,10 @@ class PostgreSQLConfig(SourceConfig):
     publication_create_enable: Optional[bool] = None
 
     # Parallel backfill configuration (optional)
-    backfill_num_rows_per_split: Optional[Union[str, int]] = None  # e.g., '100000' or 100000
-    backfill_parallelism: Optional[Union[str, int]] = None         # e.g., '8' or 8
+    # e.g., '100000' or 100000
+    backfill_num_rows_per_split: Optional[Union[str, int]] = None
+    backfill_parallelism: Optional[Union[str, int]
+                                   ] = None         # e.g., '8' or 8
     backfill_as_even_splits: Optional[bool] = None                 # e.g., True
 
     # Transactional processing (optional)
