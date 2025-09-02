@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Any, Union
 from .client import RisingWaveClient
 from .discovery.base import TableSelector, TableInfo, TableColumnConfig
 from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLSourceConnection
+from .sources.mongodb import MongoDBConfig, MongoDBDiscovery, MongoDBSourceConnection
 from .sinks.base import SinkConfig, SinkResult
 from .sinks.s3 import S3Config, S3Sink
 from .sinks.postgresql import PostgreSQLSinkConfig, PostgreSQLSink
@@ -51,76 +52,59 @@ class ConnectBuilder:
             raise ConnectionError(
                 f"Cannot connect to PostgreSQL at {config.hostname}:{config.port}")
 
-        # Discover tables (mock in dry run mode)
-        if dry_run:
-            logger.info("Dry run mode: skipping actual table discovery")
-            # Provide mock tables for demonstration
-            available_tables = [
-                TableInfo(
-                    schema_name=config.schema_name,
-                    table_name="user_events",
-                    table_type="BASE TABLE"
-                ),
-                TableInfo(
-                    schema_name=config.schema_name,
-                    table_name="users",
-                    table_type="BASE TABLE"
+        # Check if user provided specific tables
+        if table_selector and isinstance(table_selector, TableSelector) and table_selector.specific_tables:
+            # User provided specific tables - only check if those tables exist
+            logger.info(
+                f"Checking existence of {len(table_selector.specific_tables)} specific tables...")
+            available_tables = discovery.check_specific_tables(
+                table_selector.specific_tables, config.schema_name)
+
+            # Validate that all requested tables exist
+            existing_table_names = {
+                table.qualified_name for table in available_tables}
+            existing_table_names.update(
+                {table.table_name for table in available_tables})
+
+            missing_tables = []
+            for table_name in table_selector.specific_tables:
+                if table_name not in existing_table_names:
+                    missing_tables.append(table_name)
+
+            if missing_tables:
+                raise ValueError(
+                    f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
+                    f"Please verify the table names and ensure they exist before setting up CDC."
                 )
-            ]
+
+        elif isinstance(table_selector, list):
+            # table_selector is a list of table names - only check those specific tables
+            logger.info(
+                f"Checking existence of {len(table_selector)} specific tables...")
+            available_tables = discovery.check_specific_tables(
+                table_selector, config.schema_name)
+
+            # Validate that all requested tables exist
+            existing_table_names = {
+                table.qualified_name for table in available_tables}
+            existing_table_names.update(
+                {table.table_name for table in available_tables})
+
+            missing_tables = []
+            for table_name in table_selector:
+                if table_name not in existing_table_names:
+                    missing_tables.append(table_name)
+
+            if missing_tables:
+                raise ValueError(
+                    f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
+                    f"Please verify the table names and ensure they exist before setting up CDC."
+                )
         else:
-            # Check if user provided specific tables
-            if table_selector and isinstance(table_selector, TableSelector) and table_selector.specific_tables:
-                # User provided specific tables - only check if those tables exist
-                logger.info(
-                    f"Checking existence of {len(table_selector.specific_tables)} specific tables...")
-                available_tables = discovery.check_specific_tables(
-                    table_selector.specific_tables, config.schema_name)
-
-                # Validate that all requested tables exist
-                existing_table_names = {
-                    table.qualified_name for table in available_tables}
-                existing_table_names.update(
-                    {table.table_name for table in available_tables})
-
-                missing_tables = []
-                for table_name in table_selector.specific_tables:
-                    if table_name not in existing_table_names:
-                        missing_tables.append(table_name)
-
-                if missing_tables:
-                    raise ValueError(
-                        f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
-                        f"Please verify the table names and ensure they exist before setting up CDC."
-                    )
-
-            elif isinstance(table_selector, list):
-                # table_selector is a list of table names - only check those specific tables
-                logger.info(
-                    f"Checking existence of {len(table_selector)} specific tables...")
-                available_tables = discovery.check_specific_tables(
-                    table_selector, config.schema_name)
-
-                # Validate that all requested tables exist
-                existing_table_names = {
-                    table.qualified_name for table in available_tables}
-                existing_table_names.update(
-                    {table.table_name for table in available_tables})
-
-                missing_tables = []
-                for table_name in table_selector:
-                    if table_name not in existing_table_names:
-                        missing_tables.append(table_name)
-
-                if missing_tables:
-                    raise ValueError(
-                        f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
-                        f"Please verify the table names and ensure they exist before setting up CDC."
-                    )
-            else:
-                # No specific tables provided - discover all tables in schema
-                logger.info(
-                    f"Discovering all tables in schema '{config.schema_name}'...")
-                available_tables = discovery.list_tables(config.schema_name)
+            # No specific tables provided - discover all tables in schema
+            logger.info(
+                f"Discovering all tables in schema '{config.schema_name}'...")
+            available_tables = discovery.list_tables(config.schema_name)
 
         logger.info(f"Found {len(available_tables)} tables")
 
@@ -255,6 +239,189 @@ class ConnectBuilder:
         if not discovery.test_connection():
             raise ConnectionError(
                 f"Cannot connect to PostgreSQL at {config.hostname}:{config.port}")
+
+        return discovery.list_schemas()
+
+    def create_mongodb_connection(
+        self,
+        config: MongoDBConfig,
+        table_selector: Optional[Union[TableSelector, List[str]]] = None,
+        dry_run: bool = False,
+        include_commit_timestamp: bool = False,
+        include_database_name: bool = False,
+        include_collection_name: bool = False
+    ) -> Dict[str, Any]:
+        """Create a complete MongoDB CDC connection with collection discovery.
+
+        Args:
+            config: MongoDB configuration
+            table_selector: Collection selection criteria. Can be a TableSelector object or a list of collection names.
+            dry_run: If True, return SQL without executing
+            include_commit_timestamp: Whether to include commit timestamp column
+            include_database_name: Whether to include database name metadata column
+            include_collection_name: Whether to include collection name metadata column
+
+        Returns:
+            Dictionary with connection creation results
+        """
+        # Initialize discovery and connection
+        discovery = MongoDBDiscovery(config)
+        mongo_source = MongoDBSourceConnection(self.rw_client, config)
+
+        # Set dry_run mode on pipeline
+        mongo_source._dry_run_mode = dry_run
+
+        # Test connection (skip in dry run mode)
+        if not dry_run and not discovery.test_connection():
+            raise ConnectionError(
+                f"Cannot connect to MongoDB at {config.mongodb_url}")
+
+        # For MongoDB, we need to discover collections based on the patterns in config
+        available_tables = []
+        
+        # Parse collection patterns from config
+        patterns = config.get_collection_patterns()
+        
+        for pattern in patterns:
+            if '.' in pattern:
+                db_part, collection_part = pattern.split('.', 1)
+                
+                # If it's a wildcard pattern like 'db.*', discover all collections in that database
+                if collection_part == '*':
+                    collections = discovery.list_tables(db_part)
+                    available_tables.extend(collections)
+                else:
+                    # Specific collection - check if it exists
+                    specific_tables = discovery.check_specific_tables([pattern])
+                    available_tables.extend(specific_tables)
+            else:
+                # Pattern without database - use default database or error
+                if config.database_name:
+                    full_pattern = f"{config.database_name}.{pattern}"
+                    specific_tables = discovery.check_specific_tables([full_pattern])
+                    available_tables.extend(specific_tables)
+                else:
+                    logger.warning(f"Collection pattern '{pattern}' lacks database name and no default database specified")
+
+        logger.info(f"Found {len(available_tables)} collections")
+
+        # Select collections: if table_selector is not specified, include all discovered collections
+        if table_selector is None:
+            table_selector = TableSelector(include_all=True)
+        elif isinstance(table_selector, list):
+            # Convert list of collection names to TableSelector
+            table_selector = TableSelector(specific_tables=table_selector)
+
+        selected_tables = table_selector.select_tables(available_tables)
+        logger.info(f"Selected {len(selected_tables)} collections for CDC")
+
+        # Generate SQL - MongoDB CDC creates one table per collection
+        sql_statements = []
+
+        for table in selected_tables:
+            table_sql = mongo_source.create_table_sql(
+                table,
+                include_commit_timestamp=include_commit_timestamp,
+                include_database_name=include_database_name,
+                include_collection_name=include_collection_name
+            )
+            sql_statements.append(table_sql)
+
+        if dry_run:
+            return {
+                "available_tables": available_tables,
+                "selected_tables": selected_tables,
+                "sql_statements": sql_statements,
+                "executed": False
+            }
+
+        # Execute SQL statements
+        executed_statements = []
+        failed_statements = []
+        success_messages = []
+
+        for sql in sql_statements:
+            try:
+                logger.info(f"Executing SQL: {sql[:100]}...")
+                self.rw_client.execute(sql)
+                executed_statements.append(sql)
+
+                # Extract table name from SQL
+                if "CREATE TABLE" in sql.upper():
+                    table_name = sql.split("CREATE TABLE IF NOT EXISTS ")[
+                        1].split(" ")[0]
+                    success_messages.append(
+                        f"✅ MongoDB CDC table '{table_name}' created successfully")
+                else:
+                    success_messages.append(
+                        "✅ SQL statement executed successfully")
+
+            except Exception as e:
+                logger.warning(f"Failed to execute SQL statement: {e}")
+                failed_statements.append({"sql": sql, "error": str(e)})
+                # Continue with next statement instead of stopping
+
+        # Calculate success summary
+        total_statements = len(sql_statements)
+        successful_statements = len(executed_statements)
+        failed_count = len(failed_statements)
+
+        success_summary = {
+            "total_statements": total_statements,
+            "successful_statements": successful_statements,
+            "failed_statements": failed_count,
+            "success_rate": f"{successful_statements}/{total_statements}",
+            "overall_success": failed_count == 0
+        }
+
+        return {
+            "available_tables": available_tables,
+            "selected_tables": selected_tables,
+            "sql_statements": sql_statements,
+            "executed_statements": executed_statements,
+            "failed_statements": failed_statements,
+            "success_messages": success_messages,
+            "success_summary": success_summary,
+            "executed": True,
+            "partial_success": len(failed_statements) > 0
+        }
+
+    def discover_mongodb_collections(
+        self,
+        config: MongoDBConfig,
+        database_name: Optional[str] = None
+    ) -> List[TableInfo]:
+        """Discover available collections in MongoDB database.
+
+        Args:
+            config: MongoDB configuration
+            database_name: Optional specific database to query
+
+        Returns:
+            List of discovered collections
+        """
+        discovery = MongoDBDiscovery(config)
+
+        if not discovery.test_connection():
+            raise ConnectionError(
+                f"Cannot connect to MongoDB at {config.mongodb_url}")
+
+        return discovery.list_tables(database_name)
+
+    def get_mongodb_databases(self, config: MongoDBConfig) -> List[str]:
+        """Get list of available databases in MongoDB instance.
+
+        Args:
+            config: MongoDB configuration
+
+        Returns:
+            List of database names
+        """
+        discovery = MongoDBDiscovery(config)
+
+        if not discovery.test_connection():
+            raise ConnectionError(
+                f"Cannot connect to MongoDB at {config.mongodb_url}")
 
         return discovery.list_schemas()
 
@@ -485,3 +652,52 @@ def create_postgresql_cdc_source_connection(
             include_patterns=["*"], exclude_patterns=exclude_tables or [])
 
     return builder.create_postgresql_connection(pg_config, selector, dry_run)
+
+
+def create_mongodb_cdc_source_connection(
+    rw_client: RisingWaveClient,
+    mongodb_config: MongoDBConfig,
+    include_all_collections: bool = False,
+    include_collections: Optional[List[str]] = None,
+    exclude_collections: Optional[List[str]] = None,
+    include_commit_timestamp: bool = False,
+    include_database_name: bool = False,
+    include_collection_name: bool = False,
+    dry_run: bool = False
+) -> Dict[str, Any]:
+    """Convenience function to create MongoDB CDC source connection.
+
+    Args:
+        rw_client: RisingWave client
+        mongodb_config: MongoDB configuration
+        include_all_collections: Whether to include all discovered collections
+        include_collections: Specific collections to include
+        exclude_collections: Collections to exclude
+        include_commit_timestamp: Whether to include commit timestamp column
+        include_database_name: Whether to include database name metadata column
+        include_collection_name: Whether to include collection name metadata column
+        dry_run: If True, return SQL without executing
+
+    Returns:
+        Source connection creation results
+    """
+    builder = ConnectBuilder(rw_client)
+
+    # Create table selector for collections
+    if include_collections:
+        selector = TableSelector(specific_tables=include_collections)
+    elif include_all_collections:
+        selector = TableSelector(
+            include_all=True, exclude_patterns=exclude_collections or [])
+    else:
+        selector = TableSelector(
+            include_patterns=["*"], exclude_patterns=exclude_collections or [])
+
+    return builder.create_mongodb_connection(
+        mongodb_config,
+        selector,
+        dry_run,
+        include_commit_timestamp=include_commit_timestamp,
+        include_database_name=include_database_name,
+        include_collection_name=include_collection_name
+    )

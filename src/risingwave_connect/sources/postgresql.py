@@ -107,12 +107,13 @@ class PostgreSQLDiscovery(DatabaseDiscovery):
             # Convert RisingWave SSL mode format to psycopg format
             ssl_mode_mapping = {
                 'disabled': 'disable',
-                'preferred': 'prefer', 
+                'preferred': 'prefer',
                 'required': 'require',
                 'verify-ca': 'verify-ca',
                 'verify-full': 'verify-full'
             }
-            psycopg_ssl_mode = ssl_mode_mapping.get(self.config.ssl_mode, self.config.ssl_mode)
+            psycopg_ssl_mode = ssl_mode_mapping.get(
+                self.config.ssl_mode, self.config.ssl_mode)
             params.append(f"sslmode={psycopg_ssl_mode}")
         if self.config.ssl_root_cert:
             params.append(f"sslrootcert={quote(self.config.ssl_root_cert)}")
@@ -517,8 +518,8 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
         with_clause = ""
         if with_items:
-                joined_items = ',\n    '.join(with_items)
-                with_clause = f"\nWITH (\n    {joined_items}\n)"
+            joined_items = ',\n    '.join(with_items)
+            with_clause = f"\nWITH (\n    {joined_items}\n)"
 
         qualified_table_name = f"{rw_schema}.{table_name}" if rw_schema != "public" else table_name
 

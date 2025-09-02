@@ -1,11 +1,12 @@
 # RisingWave Connect
 
-A Python SDK for connecting to RisingWave with PostgreSQL CDC, automatic table discovery, and multiple sink destinations.
+A Python SDK for connecting to RisingWave with CDC sources (PostgreSQL, MongoDB), automatic discovery, and multiple sink destinations.
 
 ## Features
 
 - **PostgreSQL CDC Integration**: Complete Change Data Capture support with automatic schema discovery
-- **Table-Level Filtering**: Optimized table selection with pattern matching and validation
+- **MongoDB CDC Integration**: MongoDB change streams with collection discovery and pattern matching
+- **Table-Level Filtering**: Optimized table/collection selection with pattern matching and validation
 - **Column-Level Filtering**: Selective column replication with type control and primary key validation
 - **Multiple Sink Support**: Iceberg, S3, and PostgreSQL destinations
 - **Advanced CDC Configuration**: SSL, backfilling, publication management, and more
@@ -27,6 +28,7 @@ from risingwave_connect import (
     RisingWaveClient,
     ConnectBuilder,
     PostgreSQLConfig,
+    MongoDBConfig,
     TableSelector
 )
 
@@ -51,6 +53,36 @@ result = builder.create_postgresql_connection(
 )
 
 print(f"Created CDC source with {len(result['selected_tables'])} tables")
+```
+
+## MongoDB CDC Quick Start
+
+```python
+from risingwave_connect import (
+    RisingWaveClient,
+    ConnectBuilder,
+    MongoDBConfig
+)
+
+# Connect to RisingWave
+client = RisingWaveClient("postgresql://root@localhost:4566/dev")
+
+# Configure MongoDB CDC
+config = MongoDBConfig(
+    mongodb_url="mongodb://localhost:27017/?replicaSet=rs0",
+    collection_name="mydb.*"  # All collections in mydb database
+)
+
+# Create connector with metadata columns
+builder = ConnectBuilder(client)
+result = builder.create_mongodb_connection(
+    config=config,
+    include_commit_timestamp=True,
+    include_database_name=True,
+    include_collection_name=True
+)
+
+print(f"Created MongoDB CDC for {len(result['selected_tables'])} collections")
 ```
 
 ## Table Discovery and Selection

@@ -42,7 +42,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Operating System :: OS Independent",
 ]
-dependencies = ["psycopg[binary]>=3.1", "pydantic>=2.7"]
+dependencies = ["psycopg[binary]>=3.1", "pydantic>=2.7", "pymongo>=4.0"]
 
 [project.urls]
 Homepage = "https://github.com/risingwavelabs/risingwave-connect-py"
