@@ -34,20 +34,17 @@ def basic_mongodb_cdc_example():
 
     try:
         rw_client = RisingWaveClient(
-            host="your-risingwave-host.com",
+            host="localhost",
             port=4566,
-            username="your_username",
-            password="your_password",
-            database="your_database",
-            ssl_mode="require"
+            username="",
+            password="",
+            database="dev"
         )
 
-        # Configure MongoDB connection
-        # NOTE: Update this URL with your actual MongoDB connection string
         config = MongoDBConfig(
             source_name="movies_cdc_source",
-            mongodb_url="mongodb+srv://user:password@cluster.mongodb.net",
-            collection_name="sample_mflix.movies"  # Specific collection
+            mongodb_url="mongodb+srv://user:password@cluster0.ri23vla.mongodb.net",
+            collection_name="sample_mflix.movies"  # specific collection
         )
 
         # Create the CDC connection
@@ -75,15 +72,6 @@ def basic_mongodb_cdc_example():
 
     except Exception as e:
         print(f"❌ Example failed: {e}")
-        print("\n💡 This example uses a placeholder MongoDB URL.")
-        print("   To run this example successfully:")
-        print("   1. Replace the mongodb_url with your actual MongoDB connection string")
-        print("   2. Ensure your MongoDB cluster is accessible")
-        print("   3. Make sure RisingWave is running on localhost:4566")
-        print("\n📝 Example working MongoDB URLs:")
-        print("   - MongoDB Atlas: mongodb+srv://user:pass@cluster.mongodb.net")
-        print("   - Local MongoDB: mongodb://localhost:27017/?replicaSet=rs0")
-        print("   - Docker MongoDB: mongodb://localhost:27017")
 
 
 def advanced_mongodb_cdc_example():
@@ -93,14 +81,18 @@ def advanced_mongodb_cdc_example():
     print("=" * 50)
 
     try:
-        rw_client = RisingWaveClient(host="localhost", port=4566)
+        rw_client = RisingWaveClient(
+            host="localhost",
+            port=4566,
+            username="",
+            password="",
+            database="dev"
+        )
 
-        # Configure for multiple collections with wildcard
-        # NOTE: Update this URL with your actual MongoDB connection string
         config = MongoDBConfig(
             source_name="mflix_cdc_source",
-            mongodb_url="mongodb+srv://user:password@cluster.mongodb.net",
-            collection_name="sample_mflix.*"  # All collections in database
+            mongodb_url="mongodb+srv://user:password@cluster0.ri23vla.mongodb.net",
+            collection_name="sample_mflix.*"  # all collections in database
         )
 
         # Discover available collections first
@@ -112,9 +104,9 @@ def advanced_mongodb_cdc_example():
             print(
                 f"  - {collection.qualified_name} ({collection.row_count:,} documents)")
 
-        # Select specific collections
+        # select specific collections
         table_selector = TableSelector(
-            # Only tables with these patterns
+            # only tables with these patterns
             include_patterns=["*movies*", "*comments*"],
             exclude_patterns=["*test*"]  # Exclude test collections
         )
@@ -162,8 +154,6 @@ def advanced_mongodb_cdc_example():
 
     except Exception as e:
         print(f"❌ Advanced example failed: {e}")
-        print("\n💡 This example requires a real MongoDB connection.")
-        print("   Update the mongodb_url with your actual connection string.")
 
 
 if __name__ == "__main__":
