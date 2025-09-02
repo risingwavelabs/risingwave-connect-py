@@ -387,20 +387,25 @@ CREATE SOURCE IF NOT EXISTS {self.config.source_name} WITH (
 
         include_clauses = []
         if include_commit_timestamp:
-            include_clauses.append("TIMESTAMP AS commit_ts")
+            include_clauses.append("INCLUDE TIMESTAMP AS commit_ts")
         if include_database_name:
-            include_clauses.append("DATABASE_NAME AS database_name")
+            include_clauses.append("INCLUDE DATABASE_NAME AS database_name")
         if include_collection_name:
-            include_clauses.append("COLLECTION_NAME AS collection_name")
+            include_clauses.append(
+                "INCLUDE COLLECTION_NAME AS collection_name")
 
         # Create column definition
         columns_sql = ",\n    ".join(columns)
 
         include_sql = ""
         if include_clauses:
-            include_sql = f"\nINCLUDE {', '.join(include_clauses)}"
+            include_sql = "\n" + "\n".join(include_clauses)
 
-        return f"""-- Step 2: Create the MongoDB CDC table
+        # Format document count for comment (handle None case)
+        doc_count_str = f"{table_info.row_count:,}" if table_info.row_count is not None else "unknown"
+
+        return f"""-- MongoDB CDC Table: {qualified_table_name}
+-- Source: {table_info.qualified_name} ({doc_count_str} documents)
 CREATE TABLE IF NOT EXISTS {qualified_table_name} (
     {columns_sql}
 ){include_sql}
