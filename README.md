@@ -14,11 +14,19 @@ A Python SDK for connecting to RisingWave with CDC sources (PostgreSQL, MongoDB)
 ## Installation
 
 ```bash
+# Basic installation (PostgreSQL and MongoDB support)
+pip install risingwave-connect-py
+
+# With SQL Server support
+pip install 'risingwave-connect-py[sqlserver]'
+
+# With all optional dependencies
+pip install 'risingwave-connect-py[all]'
+
 # Using uv (recommended)
 uv add risingwave-connect-py
-
-# Using pip
-pip install risingwave-connect-py
+# or with SQL Server support
+uv add 'risingwave-connect-py[sqlserver]'
 ```
 
 ## Quick Start

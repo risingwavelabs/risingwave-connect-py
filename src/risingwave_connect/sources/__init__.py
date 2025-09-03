@@ -2,5 +2,6 @@
 
 __all__ = [
     "PostgreSQLConfig", "PostgreSQLDiscovery", "PostgreSQLSourceConnection",
-    "MongoDBConfig", "MongoDBDiscovery", "MongoDBSourceConnection"
+    "MongoDBConfig", "MongoDBDiscovery", "MongoDBSourceConnection",
+    "SQLServerConfig", "SQLServerDiscovery", "SQLServerSourceConnection"
 ]

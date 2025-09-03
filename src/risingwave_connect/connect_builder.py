@@ -8,6 +8,7 @@ from .client import RisingWaveClient
 from .discovery.base import TableSelector, TableInfo, TableColumnConfig
 from .sources.postgresql import PostgreSQLConfig, PostgreSQLDiscovery, PostgreSQLSourceConnection
 from .sources.mongodb import MongoDBConfig, MongoDBDiscovery, MongoDBSourceConnection
+from .sources.sqlserver import SQLServerConfig, SQLServerDiscovery, SQLServerSourceConnection
 from .sinks.base import SinkConfig, SinkResult
 from .sinks.s3 import S3Config, S3Sink
 from .sinks.postgresql import PostgreSQLSinkConfig, PostgreSQLSink
@@ -54,57 +55,85 @@ class ConnectBuilder:
 
         # Check if user provided specific tables
         if table_selector and isinstance(table_selector, TableSelector) and table_selector.specific_tables:
-            # User provided specific tables - only check if those tables exist
-            logger.info(
-                f"Checking existence of {len(table_selector.specific_tables)} specific tables...")
-            available_tables = discovery.check_specific_tables(
-                table_selector.specific_tables, config.schema_name)
+            # User provided specific tables - only check if those tables exist (skip in dry_run mode)
+            if not dry_run:
+                logger.info(
+                    f"Checking existence of {len(table_selector.specific_tables)} specific tables...")
+                available_tables = discovery.check_specific_tables(
+                    table_selector.specific_tables, config.schema_name)
 
-            # Validate that all requested tables exist
-            existing_table_names = {
-                table.qualified_name for table in available_tables}
-            existing_table_names.update(
-                {table.table_name for table in available_tables})
+                # Validate that all requested tables exist
+                existing_table_names = {
+                    table.qualified_name for table in available_tables}
+                existing_table_names.update(
+                    {table.table_name for table in available_tables})
 
-            missing_tables = []
-            for table_name in table_selector.specific_tables:
-                if table_name not in existing_table_names:
-                    missing_tables.append(table_name)
+                missing_tables = []
+                for table_name in table_selector.specific_tables:
+                    if table_name not in existing_table_names:
+                        missing_tables.append(table_name)
 
-            if missing_tables:
-                raise ValueError(
-                    f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
-                    f"Please verify the table names and ensure they exist before setting up CDC."
-                )
+                if missing_tables:
+                    raise ValueError(
+                        f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
+                        f"Please verify the table names and ensure they exist before setting up CDC."
+                    )
+            else:
+                # In dry_run mode, create mock tables for demonstration
+                from .discovery.base import TableInfo
+                available_tables = [
+                    TableInfo(schema_name=config.schema_name,
+                              table_name=table_name, table_type="BASE TABLE")
+                    for table_name in table_selector.specific_tables
+                ]
 
         elif isinstance(table_selector, list):
-            # table_selector is a list of table names - only check those specific tables
-            logger.info(
-                f"Checking existence of {len(table_selector)} specific tables...")
-            available_tables = discovery.check_specific_tables(
-                table_selector, config.schema_name)
+            # table_selector is a list of table names - only check those specific tables (skip in dry_run mode)
+            if not dry_run:
+                logger.info(
+                    f"Checking existence of {len(table_selector)} specific tables...")
+                available_tables = discovery.check_specific_tables(
+                    table_selector, config.schema_name)
 
-            # Validate that all requested tables exist
-            existing_table_names = {
-                table.qualified_name for table in available_tables}
-            existing_table_names.update(
-                {table.table_name for table in available_tables})
+                # Validate that all requested tables exist
+                existing_table_names = {
+                    table.qualified_name for table in available_tables}
+                existing_table_names.update(
+                    {table.table_name for table in available_tables})
 
-            missing_tables = []
-            for table_name in table_selector:
-                if table_name not in existing_table_names:
-                    missing_tables.append(table_name)
+                missing_tables = []
+                for table_name in table_selector:
+                    if table_name not in existing_table_names:
+                        missing_tables.append(table_name)
 
-            if missing_tables:
-                raise ValueError(
-                    f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
-                    f"Please verify the table names and ensure they exist before setting up CDC."
-                )
+                if missing_tables:
+                    raise ValueError(
+                        f"The following tables do not exist in schema '{config.schema_name}': {missing_tables}. "
+                        f"Please verify the table names and ensure they exist before setting up CDC."
+                    )
+            else:
+                # In dry_run mode, create mock tables for demonstration
+                from .discovery.base import TableInfo
+                available_tables = [
+                    TableInfo(schema_name=config.schema_name,
+                              table_name=table_name, table_type="BASE TABLE")
+                    for table_name in table_selector
+                ]
         else:
-            # No specific tables provided - discover all tables in schema
-            logger.info(
-                f"Discovering all tables in schema '{config.schema_name}'...")
-            available_tables = discovery.list_tables(config.schema_name)
+            # No specific tables provided - discover all tables in schema (skip in dry_run mode)
+            if not dry_run:
+                logger.info(
+                    f"Discovering all tables in schema '{config.schema_name}'...")
+                available_tables = discovery.list_tables(config.schema_name)
+            else:
+                # In dry_run mode, create mock tables for demonstration
+                from .discovery.base import TableInfo
+                available_tables = [
+                    TableInfo(schema_name=config.schema_name,
+                              table_name="mock_table_1", table_type="BASE TABLE"),
+                    TableInfo(schema_name=config.schema_name,
+                              table_name="mock_table_2", table_type="BASE TABLE")
+                ]
 
         logger.info(f"Found {len(available_tables)} tables")
 
@@ -278,30 +307,33 @@ class ConnectBuilder:
 
         # For MongoDB, we need to discover collections based on the patterns in config
         available_tables = []
-        
+
         # Parse collection patterns from config
         patterns = config.get_collection_patterns()
-        
+
         for pattern in patterns:
             if '.' in pattern:
                 db_part, collection_part = pattern.split('.', 1)
-                
+
                 # If it's a wildcard pattern like 'db.*', discover all collections in that database
                 if collection_part == '*':
                     collections = discovery.list_tables(db_part)
                     available_tables.extend(collections)
                 else:
                     # Specific collection - check if it exists
-                    specific_tables = discovery.check_specific_tables([pattern])
+                    specific_tables = discovery.check_specific_tables([
+                                                                      pattern])
                     available_tables.extend(specific_tables)
             else:
                 # Pattern without database - use default database or error
                 if config.database_name:
                     full_pattern = f"{config.database_name}.{pattern}"
-                    specific_tables = discovery.check_specific_tables([full_pattern])
+                    specific_tables = discovery.check_specific_tables(
+                        [full_pattern])
                     available_tables.extend(specific_tables)
                 else:
-                    logger.warning(f"Collection pattern '{pattern}' lacks database name and no default database specified")
+                    logger.warning(
+                        f"Collection pattern '{pattern}' lacks database name and no default database specified")
 
         logger.info(f"Found {len(available_tables)} collections")
 
@@ -422,6 +454,275 @@ class ConnectBuilder:
         if not discovery.test_connection():
             raise ConnectionError(
                 f"Cannot connect to MongoDB at {config.mongodb_url}")
+
+        return discovery.list_schemas()
+
+    def create_sqlserver_connection(
+        self,
+        config: SQLServerConfig,
+        table_selector: Optional[Union[TableSelector, List[str]]] = None,
+        column_configs: Optional[Dict[str, TableColumnConfig]] = None,
+        dry_run: bool = False,
+        include_timestamp: bool = False,
+        include_database_name: bool = False,
+        include_schema_name: bool = False,
+        include_table_name: bool = False
+    ) -> Dict[str, Any]:
+        """Create a complete SQL Server CDC connection with table discovery.
+
+        Args:
+            config: SQL Server configuration
+            table_selector: Table selection criteria. Can be a TableSelector object or a list of table names.
+            column_configs: Optional dictionary mapping table names to TableColumnConfig for column-level filtering
+            dry_run: If True, return SQL without executing
+            include_timestamp: Whether to include timestamp metadata column
+            include_database_name: Whether to include database name metadata column
+            include_schema_name: Whether to include schema name metadata column
+            include_table_name: Whether to include table name metadata column
+
+        Returns:
+            Dictionary with connection creation results
+        """
+        # Initialize discovery and connection
+        discovery = SQLServerDiscovery(config)
+        sqlserver_source = SQLServerSourceConnection(self.rw_client, config)
+
+        # Test connection (skip in dry run mode)
+        if not dry_run:
+            connection_test = discovery.test_connection()
+            if not connection_test.get("success"):
+                raise ConnectionError(
+                    f"Cannot connect to SQL Server at {config.hostname}:{config.port}. "
+                    f"Error: {connection_test.get('message', 'Unknown error')}"
+                )
+
+        # Convert table_selector if it's a list
+        if isinstance(table_selector, list):
+            table_selector = TableSelector(specific_tables=table_selector)
+
+        # Discover tables (skip validation in dry run mode)
+        if dry_run:
+            # In dry run mode, create placeholder tables without validation
+            if table_selector and table_selector.specific_tables:
+                selected_tables = []
+                for table_name in table_selector.specific_tables:
+                    # Create placeholder TableInfo for dry run
+                    if '.' in table_name:
+                        schema_name, table_name_only = table_name.split('.', 1)
+                    else:
+                        schema_name = 'dbo'  # Default SQL Server schema
+                        table_name_only = table_name
+
+                    from risingwave_connect.discovery.base import TableInfo
+                    placeholder_table = TableInfo(
+                        schema_name=schema_name,
+                        table_name=table_name_only,
+                        table_type='BASE TABLE',
+                        row_count=None,
+                        size_bytes=None,
+                        comment="Dry run - table not validated"
+                    )
+                    selected_tables.append(placeholder_table)
+            else:
+                # Default: use config patterns for dry run
+                patterns = config.get_table_patterns()
+                selected_tables = []
+                for pattern in patterns:
+                    if '.' in pattern:
+                        schema_name, table_name_only = pattern.split('.', 1)
+                    else:
+                        schema_name = 'dbo'
+                        table_name_only = pattern
+
+                    from risingwave_connect.discovery.base import TableInfo
+                    placeholder_table = TableInfo(
+                        schema_name=schema_name,
+                        table_name=table_name_only,
+                        table_type='BASE TABLE',
+                        row_count=None,
+                        size_bytes=None,
+                        comment="Dry run - table not validated"
+                    )
+                    selected_tables.append(placeholder_table)
+        else:
+            # Normal mode: validate tables with actual discovery
+            if table_selector and table_selector.specific_tables:
+                # Check specific tables
+                selected_tables = discovery.check_specific_tables(
+                    table_selector.specific_tables)
+            elif table_selector and (table_selector.include_patterns or table_selector.include_all):
+                # Use patterns or include all
+                all_tables = discovery.list_tables()
+                selected_tables = table_selector.select_tables(all_tables)
+            else:
+                # Default: discover tables based on config patterns
+                patterns = config.get_table_patterns()
+                selected_tables = discovery.check_specific_tables(patterns)
+
+        if not selected_tables:
+            logger.warning("No tables found matching the selection criteria")
+            return {
+                "success": False,
+                "message": "No tables found matching the selection criteria",
+                "selected_tables": [],
+                "sql_statements": [],
+                "failed_statements": []
+            }
+
+        # Create source first
+        source_sql = sqlserver_source.create_source_sql()
+
+        # Prepare table creation
+        sql_statements = [source_sql]
+        failed_statements = []
+        successful_tables = []
+
+        # Process each selected table
+        for table_info in selected_tables:
+            try:
+                # Get column config for this table if provided
+                column_config = None
+                if column_configs:
+                    table_key = table_info.table_name
+                    if table_key not in column_configs:
+                        # Try qualified name
+                        table_key = table_info.qualified_name
+                    column_config = column_configs.get(table_key)
+
+                # Validate column config if provided
+                if column_config:
+                    validation_result = discovery.validate_column_selection(
+                        table_info, column_config.column_selections
+                    )
+                    if not validation_result['valid']:
+                        error_msg = f"Column validation failed for {table_info.qualified_name}: {validation_result['errors']}"
+                        failed_statements.append({
+                            "table": table_info.qualified_name,
+                            "error": error_msg,
+                            "sql": "-- Column validation failed"
+                        })
+                        continue
+
+                # Generate table SQL
+                table_sql = sqlserver_source.create_table_sql(
+                    table_info,
+                    column_config=column_config,
+                    include_timestamp=include_timestamp,
+                    include_database_name=include_database_name,
+                    include_schema_name=include_schema_name,
+                    include_table_name=include_table_name
+                )
+                sql_statements.append(table_sql)
+                successful_tables.append(table_info)
+
+            except Exception as e:
+                error_msg = f"Failed to create table {table_info.qualified_name}: {str(e)}"
+                logger.error(error_msg)
+                failed_statements.append({
+                    "table": table_info.qualified_name,
+                    "error": error_msg,
+                    "sql": f"-- Error: {str(e)}"
+                })
+
+        # Execute SQL statements if not dry run
+        execution_results = []
+        if not dry_run and sql_statements:
+            try:
+                # Execute source creation
+                source_result = self.rw_client.execute_sql(source_sql)
+                execution_results.append({
+                    "sql": source_sql,
+                    "success": source_result.get("success", True),
+                    "message": source_result.get("message", "Source created")
+                })
+
+                # Execute table creations
+                for i, table_sql in enumerate(sql_statements[1:], 1):
+                    try:
+                        table_result = self.rw_client.execute_sql(table_sql)
+                        execution_results.append({
+                            "sql": table_sql,
+                            "success": table_result.get("success", True),
+                            "message": table_result.get("message", f"Table {i} created")
+                        })
+                    except Exception as e:
+                        execution_results.append({
+                            "sql": table_sql,
+                            "success": False,
+                            "message": f"Failed to execute table SQL: {str(e)}"
+                        })
+
+            except Exception as e:
+                logger.error(f"Failed to execute source SQL: {e}")
+                execution_results.append({
+                    "sql": source_sql,
+                    "success": False,
+                    "message": f"Failed to create source: {str(e)}"
+                })
+
+        # Generate summary
+        total_tables = len(selected_tables)
+        successful_count = len(successful_tables)
+        failed_count = len(failed_statements)
+
+        return {
+            "success_summary": {
+                "overall_success": failed_count == 0,
+                "total_tables": total_tables,
+                "successful_tables": successful_count,
+                "failed_tables": failed_count
+            },
+            "selected_tables": successful_tables,
+            "sql_statements": sql_statements,
+            "failed_statements": failed_statements,
+            "execution_results": execution_results if not dry_run else [],
+            "dry_run": dry_run,
+            "executed": not dry_run,
+            "partial_success": len(failed_statements) > 0
+        }
+
+    def discover_sqlserver_tables(
+        self,
+        config: SQLServerConfig,
+        schema_name: Optional[str] = None
+    ) -> List[TableInfo]:
+        """Discover available tables in SQL Server database.
+
+        Args:
+            config: SQL Server configuration
+            schema_name: Optional specific schema to query
+
+        Returns:
+            List of discovered tables
+        """
+        discovery = SQLServerDiscovery(config)
+
+        connection_test = discovery.test_connection()
+        if not connection_test.get("success"):
+            raise ConnectionError(
+                f"Cannot connect to SQL Server at {config.hostname}:{config.port}. "
+                f"Error: {connection_test.get('message', 'Unknown error')}"
+            )
+
+        return discovery.list_tables(schema_name)
+
+    def get_sqlserver_schemas(self, config: SQLServerConfig) -> List[str]:
+        """Get list of available schemas in SQL Server database.
+
+        Args:
+            config: SQL Server configuration
+
+        Returns:
+            List of schema names
+        """
+        discovery = SQLServerDiscovery(config)
+
+        connection_test = discovery.test_connection()
+        if not connection_test.get("success"):
+            raise ConnectionError(
+                f"Cannot connect to SQL Server at {config.hostname}:{config.port}. "
+                f"Error: {connection_test.get('message', 'Unknown error')}"
+            )
 
         return discovery.list_schemas()
 
@@ -700,4 +1001,59 @@ def create_mongodb_cdc_source_connection(
         include_commit_timestamp=include_commit_timestamp,
         include_database_name=include_database_name,
         include_collection_name=include_collection_name
+    )
+
+
+def create_sqlserver_cdc_source_connection(
+    rw_client: RisingWaveClient,
+    sqlserver_config: SQLServerConfig,
+    include_all_tables: bool = False,
+    include_tables: Optional[List[str]] = None,
+    exclude_tables: Optional[List[str]] = None,
+    column_configs: Optional[Dict[str, TableColumnConfig]] = None,
+    include_timestamp: bool = False,
+    include_database_name: bool = False,
+    include_schema_name: bool = False,
+    include_table_name: bool = False,
+    dry_run: bool = False
+) -> Dict[str, Any]:
+    """Convenience function to create SQL Server CDC source connection.
+
+    Args:
+        rw_client: RisingWave client
+        sqlserver_config: SQL Server configuration
+        include_all_tables: Whether to include all discovered tables
+        include_tables: Specific tables to include
+        exclude_tables: Tables to exclude
+        column_configs: Optional dictionary mapping table names to TableColumnConfig for column-level filtering
+        include_timestamp: Whether to include timestamp metadata column
+        include_database_name: Whether to include database name metadata column
+        include_schema_name: Whether to include schema name metadata column
+        include_table_name: Whether to include table name metadata column
+        dry_run: If True, return SQL without executing
+
+    Returns:
+        Source connection creation results
+    """
+    builder = ConnectBuilder(rw_client)
+
+    # Create table selector
+    if include_tables:
+        selector = TableSelector(specific_tables=include_tables)
+    elif include_all_tables:
+        selector = TableSelector(
+            include_all=True, exclude_patterns=exclude_tables or [])
+    else:
+        selector = TableSelector(
+            include_patterns=["*"], exclude_patterns=exclude_tables or [])
+
+    return builder.create_sqlserver_connection(
+        sqlserver_config,
+        selector,
+        column_configs,
+        dry_run,
+        include_timestamp=include_timestamp,
+        include_database_name=include_database_name,
+        include_schema_name=include_schema_name,
+        include_table_name=include_table_name
     )

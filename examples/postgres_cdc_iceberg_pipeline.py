@@ -52,6 +52,7 @@ def create_cdc_to_iceberg_connector():
     # Create CDC connection
     print("Creating PostgreSQL CDC source...")
     source_tables = ["random_table_1", "dashboard"]  # Only existing tables
+
     cdc_result = builder.create_postgresql_connection(
         config=postgres_config,
         table_selector=source_tables,
