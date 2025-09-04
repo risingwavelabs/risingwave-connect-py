@@ -101,3 +101,5 @@ class SinkResult(BaseModel):
     source_table: str
     success: bool = True
     error_message: Optional[str] = None
+    execution_time: Optional[float] = None
+    message: Optional[str] = None

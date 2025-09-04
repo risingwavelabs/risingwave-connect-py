@@ -8,6 +8,16 @@ mode: agent
 
 RisingWave Connect simplifies connecting to RisingWave, a streaming database. It supports table discovery, connection creation, and integration with sources like PostgreSQL/MySQL/MongoDB and sinks like S3/Iceberg/Snowflake/Redshift.
 
+## Development
+
+This project uses [uv](https://github.com/astral-sh/uv) for fast Python package management and builds. See the `[tool.uv]` section in `pyproject.toml`.
+
+Before running any Python code, ensure the agent is operating within a virtual environment (venv). This guarantees dependencies are isolated and consistent.
+
+- Check for an active venv (`sys.prefix` or `VIRTUAL_ENV`).
+- If not in venv, prompt to activate or create one using `uv venv .venv` and activate with `source .venv/bin/activate`.
+- All Python commands should run inside the venv context.
+
 ##
 
 ```sql
