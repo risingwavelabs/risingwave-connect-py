@@ -26,6 +26,7 @@ class KafkaBuilder(BaseSourceBuilder):
         include_headers: bool = False,
         include_key: bool = False,
         include_payload: bool = False,
+        specific_headers: Optional[Dict[str, str]] = None,  # {header_name: data_type}
         connection_type: str = "table"  # "source" or "table"
     ) -> Dict[str, Any]:
         """
@@ -39,9 +40,10 @@ class KafkaBuilder(BaseSourceBuilder):
             include_offset: Include Kafka offset in table
             include_partition: Include Kafka partition in table
             include_timestamp: Include Kafka timestamp in table
-            include_headers: Include Kafka headers in table
+            include_headers: Include all Kafka headers in table as STRUCT array
             include_key: Include Kafka key in table
-            include_payload: Include Kafka payload in table
+            include_payload: Include Kafka payload in table (JSON format only)
+            specific_headers: Include specific header fields {header_name: data_type}
             connection_type: "source" (data not stored) or "table" (data stored)
         """
         try:
@@ -56,7 +58,7 @@ class KafkaBuilder(BaseSourceBuilder):
                 source_sql = self._create_kafka_source_standalone(
                     config, table_name, table_schema,
                     include_offset, include_partition, include_timestamp, 
-                    include_headers, include_key, include_payload
+                    include_headers, include_key, include_payload, specific_headers
                 )
                 sql_statements.append(source_sql)
             else:
@@ -64,7 +66,7 @@ class KafkaBuilder(BaseSourceBuilder):
                 table_sql = self._create_kafka_table_standalone(
                     config, table_name, table_schema,
                     include_offset, include_partition, include_timestamp, 
-                    include_headers, include_key, include_payload
+                    include_headers, include_key, include_payload, specific_headers
                 )
                 sql_statements.append(table_sql)
 
@@ -91,14 +93,15 @@ class KafkaBuilder(BaseSourceBuilder):
                 },
                 "table_info": {
                     "table_name": table_name,
-                    "format": f"{config.format_type} ENCODE {config.encode_type}",
+                    "format": f"{config.data_format} ENCODE {config.data_encode}",
                     "includes_metadata": {
                         "offset": include_offset,
                         "partition": include_partition,
                         "timestamp": include_timestamp,
                         "headers": include_headers,
                         "key": include_key,
-                        "payload": include_payload
+                        "payload": include_payload,
+                        "specific_headers": specific_headers or {}
                     }
                 },
                 "sql_statements": sql_statements,
@@ -126,7 +129,8 @@ class KafkaBuilder(BaseSourceBuilder):
         include_timestamp: bool = False,
         include_headers: bool = False,
         include_key: bool = False,
-        include_payload: bool = False
+        include_payload: bool = False,
+        specific_headers: Optional[Dict[str, str]] = None
     ) -> str:
         """Create standalone Kafka source SQL statement (data not stored)."""
         
@@ -137,13 +141,13 @@ class KafkaBuilder(BaseSourceBuilder):
                 columns.append(f"    {col_name} {col_type}")
         else:
             # Auto-generate basic schema based on encode type
-            if config.encode_type.upper() == "JSON":
+            if config.data_encode.upper() == "JSON":
                 columns.extend([
                     "    user_id INT",
                     "    product_id VARCHAR", 
                     "    timestamp TIMESTAMP"
                 ])
-            elif config.encode_type.upper() == "BYTES":
+            elif config.data_encode.upper() == "BYTES":
                 columns.append("    id BYTEA")
             else:
                 columns.append("    data JSONB")
@@ -162,8 +166,13 @@ class KafkaBuilder(BaseSourceBuilder):
             include_clauses.append("INCLUDE timestamp AS kafka_timestamp")
         if include_headers:
             include_clauses.append("INCLUDE header AS kafka_headers")
-        if include_payload:
+        if include_payload and config.data_encode.upper() == "JSON":
             include_clauses.append("INCLUDE payload AS kafka_payload")
+        
+        # Add specific header fields
+        if specific_headers:
+            for header_name, data_type in specific_headers.items():
+                include_clauses.append(f"INCLUDE header '{header_name}' {data_type} AS {header_name}")
 
         include_clause = "\n" + "\n".join(include_clauses) if include_clauses else ""
 
@@ -174,12 +183,20 @@ class KafkaBuilder(BaseSourceBuilder):
         properties = config.to_source_properties()
         with_clauses = []
         for key, value in properties.items():
-            with_clauses.append(f"    {key}='{value}'")
+            with_clauses.append(f"   {key}='{value}'")
         with_clause = ",\n".join(with_clauses)
 
-        sql = f"""CREATE SOURCE IF NOT EXISTS {source_name} (
+        # Build the final SQL statement
+        if column_definitions:
+            sql = f"""CREATE SOURCE IF NOT EXISTS {source_name} (
 {column_definitions}
 ){include_clause}
+WITH (
+{with_clause}
+) {format_clause};"""
+        else:
+            # Schema-less source (like AVRO with schema registry)
+            sql = f"""CREATE SOURCE IF NOT EXISTS {source_name}{include_clause}
 WITH (
 {with_clause}
 ) {format_clause};"""
@@ -196,7 +213,8 @@ WITH (
         include_timestamp: bool = False,
         include_headers: bool = False,
         include_key: bool = False,
-        include_payload: bool = False
+        include_payload: bool = False,
+        specific_headers: Optional[Dict[str, str]] = None
     ) -> str:
         """Create standalone Kafka table SQL statement (data stored)."""
         
@@ -213,36 +231,38 @@ WITH (
                     columns.append(f"    {col_name} {col_type}")
         else:
             # Auto-generate basic schema based on encode type
-            if config.encode_type.upper() == "JSON":
+            if config.data_encode.upper() == "JSON":
                 columns.extend([
                     "    user_id INT",
                     "    product_id VARCHAR", 
                     "    timestamp TIMESTAMP"
                 ])
-                if config.format_type.upper() == "UPSERT":
+                if config.data_format.upper() == "UPSERT":
                     primary_key_columns.append("user_id")
-            elif config.encode_type.upper() == "BYTES":
+            elif config.data_encode.upper() == "BYTES":
                 columns.append("    id BYTEA")
             else:
                 columns.append("    data JSONB")
 
         # Add primary key constraint if UPSERT format
-        if config.format_type.upper() == "UPSERT" and include_key:
-            if not primary_key_columns:
-                columns.append("    PRIMARY KEY (rw_key)")
-            elif len(primary_key_columns) == 1:
-                # Replace single column definition with PRIMARY KEY
-                for i, col in enumerate(columns):
-                    if primary_key_columns[0] in col:
-                        if "PRIMARY KEY" not in col:
-                            columns[i] = col.replace(primary_key_columns[0], f"{primary_key_columns[0]} PRIMARY KEY", 1)
+        if config.data_format.upper() == "UPSERT":
+            # For UPSERT, we need to handle the key inclusion properly
+            if include_key:
+                # If no explicit primary key in schema, use rw_key as primary key
+                if not primary_key_columns:
+                    # Add rw_key as primary key if not already defined in schema
+                    if not any("rw_key" in col for col in columns):
+                        columns.append("    primary key (rw_key)")
+            elif not primary_key_columns:
+                # If no key inclusion and no primary key defined, warn or error
+                logger.warning("UPSERT format typically requires a primary key. Consider setting include_key=True or defining a primary key in table_schema.")
 
         column_definitions = ",\n".join(columns) if columns else ""
 
         # Build INCLUDE clauses for metadata
         include_clauses = []
         if include_key:
-            if config.format_type.upper() == "UPSERT":
+            if config.data_format.upper() == "UPSERT":
                 include_clauses.append("INCLUDE key AS rw_key")
             else:
                 include_clauses.append("INCLUDE key AS kafka_key")
@@ -254,8 +274,13 @@ WITH (
             include_clauses.append("INCLUDE timestamp AS kafka_timestamp")
         if include_headers:
             include_clauses.append("INCLUDE header AS kafka_headers")
-        if include_payload:
+        if include_payload and config.data_encode.upper() == "JSON":
             include_clauses.append("INCLUDE payload AS kafka_payload")
+        
+        # Add specific header fields
+        if specific_headers:
+            for header_name, data_type in specific_headers.items():
+                include_clauses.append(f"INCLUDE header '{header_name}' {data_type} AS {header_name}")
 
         include_clause = "\n" + "\n".join(include_clauses) if include_clauses else ""
 
@@ -266,12 +291,20 @@ WITH (
         properties = config.to_source_properties()
         with_clauses = []
         for key, value in properties.items():
-            with_clauses.append(f"    {key}='{value}'")
+            with_clauses.append(f"   {key}='{value}'")
         with_clause = ",\n".join(with_clauses)
 
-        sql = f"""CREATE TABLE IF NOT EXISTS {table_name} (
+        # Build the final SQL statement
+        if column_definitions:
+            sql = f"""CREATE TABLE IF NOT EXISTS {table_name} (
 {column_definitions}
 ){include_clause}
+WITH (
+{with_clause}
+) {format_clause};"""
+        else:
+            # Schema-less table (like AVRO with schema registry)
+            sql = f"""CREATE TABLE IF NOT EXISTS {table_name}{include_clause}
 WITH (
 {with_clause}
 ) {format_clause};"""
@@ -280,36 +313,26 @@ WITH (
 
     def _build_format_clause(self, config: KafkaConfig) -> str:
         """Build the FORMAT clause with encoding parameters."""
-        format_clause = f"FORMAT {config.format_type} ENCODE {config.encode_type}"
+        format_clause = f"FORMAT {config.data_format} ENCODE {config.data_encode}"
         
-        # Add encoding-specific parameters
-        encode_params = []
-        if config.encode_type.upper() == "AVRO":
-            if config.avro_message:
-                encode_params.append(f"message = '{config.avro_message}'")
-            if config.schema_registry_url:
-                encode_params.append(f"schema.registry = '{config.schema_registry_url}'")
-            if config.schema_registry_username:
-                encode_params.append(f"schema.registry.username='{config.schema_registry_username}'")
-            if config.schema_registry_password:
-                encode_params.append(f"schema.registry.password='{config.schema_registry_password}'")
-                
-        elif config.encode_type.upper() == "PROTOBUF":
-            if config.protobuf_message:
-                encode_params.append(f"message = '{config.protobuf_message}'")
-            if config.protobuf_access_key:
-                encode_params.append(f"access_key = '{config.protobuf_access_key}'")
-            if config.protobuf_secret_key:
-                encode_params.append(f"secret_key = '{config.protobuf_secret_key}'")
-            if config.protobuf_location:
-                encode_params.append(f"location = '{config.protobuf_location}'")
-                
-        elif config.encode_type.upper() == "CSV":
-            encode_params.append(f"without_header = '{str(config.csv_without_header).lower()}'")
-            encode_params.append(f"delimiter = '{config.csv_delimiter}'")
+        # Get format/encoding specific parameters
+        format_properties = config.get_format_encode_properties()
         
-        if encode_params:
-            format_clause += f" (\n   {',\\n   '.join(encode_params)}\n)"
+        if format_properties:
+            encode_params = []
+            for key, value in format_properties.items():
+                # Handle different value types appropriately
+                if isinstance(value, bool):
+                    encode_params.append(f"{key} = '{str(value).lower()}'")
+                else:
+                    encode_params.append(f"{key} = '{value}'")
+            
+            # Format the parameters with proper indentation
+            if len(encode_params) == 1:
+                format_clause += f" ({encode_params[0]})"
+            else:
+                param_str = ',\n   '.join(encode_params)
+                format_clause += f" (\n   {param_str}\n)"
         
         # Add key encoding if specified
         if config.key_encode_type:

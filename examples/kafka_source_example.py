@@ -4,13 +4,13 @@ Kafka Source Examples for RisingWave Connect
 ===========================================
 
 This example demonstrates how to create Kafka source connections
-with different configurations and formats.
+with different configurations and formats using the improved API.
 """
 
 import logging
 from risingwave_connect.client import RisingWaveClient
-from risingwave_connect.connect_builder import ConnectBuilder
 from risingwave_connect.sources.kafka import KafkaConfig
+from risingwave_connect.builders.kafka import KafkaBuilder
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,21 +24,19 @@ def main():
     # Initialize RisingWave client (dry run mode for examples)
     client = RisingWaveClient(
         host="localhost", port=4566, user="root", password="")
-    builder = ConnectBuilder(client)
+    kafka_builder = KafkaBuilder(client)
 
     # Example 1: Basic JSON Kafka Source
     print("\n💼 Basic JSON Kafka Source Example")
     print("=" * 50)
 
-    kafka_config = KafkaConfig(
+    kafka_config = KafkaConfig.create_basic_json_config(
         bootstrap_servers="localhost:9092",
         topic="user_events",
-        consumer_group="risingwave_consumers",
-        format_type="PLAIN",
-        encode_type="JSON"
+        group_id_prefix="risingwave_consumers"
     )
 
-    result = builder.create_kafka_connection(
+    result = kafka_builder.create_connection(
         config=kafka_config,
         table_name="user_events",
         connection_type="table",  # Store data in RisingWave
@@ -69,16 +67,14 @@ def main():
     print("\n💼 AVRO Kafka Source with Schema Registry Example")
     print("=" * 60)
 
-    avro_kafka_config = KafkaConfig(
+    avro_kafka_config = KafkaConfig.create_avro_config(
         bootstrap_servers="localhost:9092",
         topic="orders",
-        consumer_group="risingwave_orders",
-        format_type="PLAIN",
-        encode_type="AVRO",
         schema_registry_url="http://localhost:8081",
         schema_registry_username="schema_user",
         schema_registry_password="schema_pass",
-        avro_message="message_name"
+        message="message_name",
+        group_id_prefix="risingwave_orders"
     )
 
     # Custom table schema for AVRO
@@ -91,7 +87,7 @@ def main():
         "order_time": "TIMESTAMP"
     }
 
-    result = builder.create_kafka_connection(
+    result = kafka_builder.create_connection(
         config=avro_kafka_config,
         table_name="orders",
         table_schema=order_schema,
@@ -119,20 +115,18 @@ def main():
     print("\n💼 Secure Kafka with SASL/SSL Example")
     print("=" * 50)
 
-    secure_kafka_config = KafkaConfig(
+    secure_kafka_config = KafkaConfig.create_secure_config(
         bootstrap_servers="kafka-cluster.company.com:9093",
         topic="financial_transactions",
-        consumer_group="risingwave_finance",
-        format_type="PLAIN",
-        encode_type="JSON",
         security_protocol="SASL_SSL",
         sasl_mechanism="SCRAM-SHA-256",
         sasl_username="finance_user",
         sasl_password="secure_password",
-        ssl_ca_location="/path/to/ca-cert.pem"
+        ssl_ca_location="/path/to/ca-cert.pem",
+        group_id_prefix="risingwave_finance"
     )
 
-    result = builder.create_kafka_connection(
+    result = kafka_builder.create_connection(
         config=secure_kafka_config,
         table_name="financial_transactions",
         include_offset=True,
@@ -155,9 +149,9 @@ def main():
     upsert_kafka_config = KafkaConfig(
         bootstrap_servers="localhost:9092",
         topic="user_profiles",
-        consumer_group="risingwave_profiles",
-        format_type="UPSERT",
-        encode_type="JSON"
+        data_format="UPSERT",
+        data_encode="JSON",
+        group_id_prefix="risingwave_profiles"
     )
 
     # Custom table schema for UPSERT with primary key
@@ -168,7 +162,7 @@ def main():
         "updated_at": "TIMESTAMP"
     }
 
-    result = builder.create_kafka_connection(
+    result = kafka_builder.create_connection(
         config=upsert_kafka_config,
         table_name="user_profiles",
         table_schema=profile_schema,
