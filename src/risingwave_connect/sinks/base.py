@@ -19,6 +19,28 @@ class SinkConfig(BaseModel):
     class Config:
         extra = "forbid"
 
+    def requires_sink_decouple_false(self) -> bool:
+        """
+        Check if this sink type requires 'SET sink_decouple = false;' before creation.
+        
+        Returns:
+            True if sink requires SET sink_decouple = false, False otherwise
+        """
+        # Sinks that require SET sink_decouple = false;
+        return self.sink_type in ["elasticsearch", "snowflake", "redshift"]
+
+    def get_required_set_statements(self) -> List[str]:
+        """
+        Get the required SET statements that must be executed before creating this sink.
+        
+        Returns:
+            List of SET statements required for this sink type
+        """
+        statements = []
+        if self.requires_sink_decouple_false():
+            statements.append("SET sink_decouple = false;")
+        return statements
+
 
 class SinkPipeline(ABC):
     """Abstract base class for sink pipeline implementations."""
